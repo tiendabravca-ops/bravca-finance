@@ -7,7 +7,6 @@ import os
 import streamlit as st
 import io
 
-# Intentamos importar pypdf para leer PDFs si está disponible
 try:
     import pypdf
     HAS_PYPDF = True
@@ -39,7 +38,7 @@ def init_db():
     """)
     conn.commit()
     
-    # Asegurar compatibilidad agregando columnas faltantes si la tabla ya existía
+    # Asegurar compatibilidad de columnas
     cursor.execute("PRAGMA table_info(cierres)")
     columns = [column[1] for column in cursor.fetchall()]
     
@@ -60,7 +59,6 @@ def sincronizar_cierres_gmail():
     cursor = conn.cursor()
 
     try:
-        # Conexión IMAP segura a Gmail
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
         mail.login(user, password)
         mail.select("INBOX")
@@ -72,7 +70,7 @@ def sincronizar_cierres_gmail():
 
         email_ids = messages[0].split()
         email_ids = email_ids[-15:] 
-        nuevos_registros = 0
+        registros_procesados = 0
 
         for e_id in email_ids:
             res, msg_data = mail.fetch(e_id, "(RFC822)")
@@ -116,7 +114,7 @@ def sincronizar_cierres_gmail():
 
                         full_content = body + "\n" + pdf_text
 
-                        # Extracción con expresiones regulares
+                        # Extracción de campos
                         negocio_match = re.search(r"Negocio\s+([^\n]+)", full_content)
                         cajero_match = re.search(r"Cajero\(a\)\s+([^\n]+)", full_content)
                         fecha_match = re.search(r"(?:Cerrado|Fecha)\s+([^\n]+)", full_content)
@@ -125,29 +123,40 @@ def sincronizar_cierres_gmail():
                         cajero = cajero_match.group(1).strip() if cajero_match else "Leonardo Venegas Mejías"
                         fecha = fecha_match.group(1).strip() if fecha_match else "2026-10-16 18:46"
 
-                        # Búsqueda precisa de totales en el PDF
-                        colones_match = re.search(r"Total\s+(?:de\s+ventas|cobrado)\D*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
+                        # Búsqueda específica del Total de ventas en colones (ej: ₡42,500.00)
+                        colones_match = re.search(r"Total\s+de\s+ventas\s*[\n\r\s]*[₡]?\s*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
                         if not colones_match:
-                            colones_match = re.search(r"(?:CRC|Colones|₡)\s*([\d,]+\.\d{2})", full_content)
+                            colones_match = re.search(r"Total\s+cobrado\s*[\n\r\s]*[₡]?\s*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
+                        if not colones_match:
+                            colones_match = re.search(r"[₡]\s*([\d,]+\.\d{2})", full_content)
 
                         dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.\d{2})", full_content)
 
                         colones = float(colones_match.group(1).replace(",", "")) if colones_match else 42500.0
                         dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 0.0
 
-                        # Evitar duplicados
+                        # Si el registro ya existe, actualizamos los valores en lugar de ignorarlo
                         cursor.execute("SELECT id FROM cierres WHERE fecha = ? AND cajero = ?", (fecha, cajero))
-                        if not cursor.fetchone():
+                        row = cursor.fetchone()
+                        
+                        if row:
+                            cursor.execute("""
+                                UPDATE cierres 
+                                SET negocio = ?, colones = ?, dolares = ?, estado = ?
+                                WHERE id = ?
+                            """, (negocio, colones, dolares, "Recibido / Verificado", row[0]))
+                        else:
                             cursor.execute("""
                                 INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, estado)
                                 VALUES (?, ?, ?, ?, ?, ?)
                             """, (fecha, cajero, negocio, colones, dolares, "Recibido / Verificado"))
-                            conn.commit()
-                            nuevos_registros += 1
+                        
+                        conn.commit()
+                        registros_procesados += 1
 
         mail.logout()
         conn.close()
-        return True, f"Sincronización exitosa. Se procesaron {nuevos_registros} nuevos cierres."
+        return True, f"Sincronización exitosa. Se actualizaron/procesaron {registros_procesados} cierres."
 
     except Exception as e:
         conn.close()
