@@ -38,6 +38,16 @@ def init_db():
         )
     """)
     conn.commit()
+    
+    # Asegurar compatibilidad con versiones anteriores agregando columnas faltantes de forma segura
+    cursor.execute("PRAGMA table_info(cierres)")
+    columns = [column[1] for column in cursor.fetchall()]
+    
+    for col_name, col_type in [("cajero", "TEXT"), ("negocio", "TEXT"), ("colones", "REAL"), ("dolares", "REAL"), ("estado", "TEXT")]:
+        if col_name not in columns:
+            cursor.execute(f"ALTER TABLE cierres ADD COLUMN {col_name} {col_type}")
+            conn.commit()
+
     conn.close()
 
 def sincronizar_cierres_gmail():
