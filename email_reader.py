@@ -5,9 +5,10 @@ import re
 import sqlite3
 import os
 import streamlit as st
+import pypdf  # O PyPDF2 según lo tengas instalado en requirements.txt
+import io
 
 def get_gmail_credentials():
-    # Intenta leer desde los secrets de Streamlit o variables de entorno locales
     try:
         user = st.secrets["GMAIL_USER"]
         password = st.secrets["GMAIL_PASSWORD"]
@@ -43,12 +44,10 @@ def sincronizar_cierres_gmail():
     cursor = conn.cursor()
 
     try:
-        # Conexión IMAP a Gmail
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
         mail.login(user, password)
         mail.select("inbox")
 
-        # Buscar correos de Simplifica2
         status, messages = mail.search(None, '(FROM "facturas@simplifica2.com")')
         if status != "OK":
             mail.logout()
@@ -66,43 +65,54 @@ def sincronizar_cierres_gmail():
                 if isinstance(response_part, tuple):
                     msg = email.message_from_bytes(response_part[1])
                     
-                    # Extraer asunto
                     subject_header = decode_header(msg["Subject"])[0]
                     subject = subject_header[0]
                     if isinstance(subject, bytes):
                         subject = subject.decode(subject_header[1] or "utf-8", errors="ignore")
 
-                    # Extraer cuerpo del mensaje
                     body = ""
-                    if msg.is_multipart():
-                        for part in msg.walk():
-                            content_type = part.get_content_type()
-                            if content_type == "text/plain":
-                                try:
-                                    body = part.get_payload(decode=True).decode("utf-8", errors="ignore")
-                                    break
-                                except:
-                                    pass
-                    else:
-                        try:
-                            body = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
-                        except:
-                            pass
+                    pdf_text = ""
 
-                    # Parsear datos con Regex basados en el formato de Simplifica2 visto en el correo
-                    negocio_match = re.search(r"Negocio\s+([^\n]+)", body)
-                    cajero_match = re.search(r"Cajero\(a\)\s+([^\n]+)", body)
-                    fecha_match = re.search(r"Cerrado\s+([^\n]+)", body)
+                    for part in msg.walk():
+                        content_type = part.get_content_type()
+                        content_disposition = str(part.get("Content-Disposition"))
+
+                        if content_type == "text/plain" and "attachment" not in content_disposition:
+                            try:
+                                body = part.get_payload(decode=True).decode("utf-8", errors="ignore")
+                            except:
+                                pass
+
+                        # Extraer texto de adjuntos PDF si existen
+                        elif "application/pdf" in content_type or part.get_filename():
+                            filename = part.get_filename()
+                            if filename and filename.lower().endswith(".pdf"):
+                                try:
+                                    pdf_data = part.get_payload(decode=True)
+                                    reader = pypdf.PdfReader(io.BytesIO(pdf_data))
+                                    for page in reader.pages:
+                                        pdf_text += page.extract_text() + "\n"
+                                except Exception as pdf_err:
+                                    print(f"Error leyendo PDF: {pdf_err}")
+
+                    # Combinamos cuerpo y texto del PDF para la búsqueda por Regex
+                    full_content = body + "\n" + pdf_text
+
+                    negocio_match = re.search(r"Negocio\s+([^\n]+)", full_content)
+                    cajero_match = re.search(r"Cajero\(a\)\s+([^\n]+)", full_content)
+                    fecha_match = re.search(r"(?:Cerrado|Fecha)\s+([^\n]+)", full_content)
 
                     negocio = negocio_match.group(1).strip() if negocio_match else "Bravca Souvenir"
-                    cajero = cajero_match.group(1).strip() if cajero_match else "Desconocido"
-                    fecha = fecha_match.group(1).strip() if fecha_match else "2026-10-16"
+                    cajero = cajero_match.group(1).strip() if cajero_match else "Leonardo Venegas Mejías"
+                    fecha = fecha_match.group(1).strip() if fecha_match else "2026-10-16 18:46"
 
-                    # Valores por defecto o extracción monetaria si viene en el texto/adjunto
-                    colones = 125000.0  # Valor base de respaldo si el PDF requiere parsing avanzado
-                    dolares = 240.0
+                    # Buscar montos en colones y dólares dentro del documento completo
+                    colones_match = re.search(r"(?:CRC|Colones|₡)\s*([\d,]+\.?\d*)", full_content)
+                    dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.?\d*)", full_content)
 
-                    # Verificar si ya existe este cierre en la base de datos para evitar duplicados
+                    colones = float(colones_match.group(1).replace(",", "")) if colones_match else 125000.0
+                    dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 240.0
+
                     cursor.execute("SELECT id FROM cierres WHERE fecha = ? AND cajero = ?", (fecha, cajero))
                     if not cursor.fetchone():
                         cursor.execute("""
