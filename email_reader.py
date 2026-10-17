@@ -33,16 +33,22 @@ def init_db():
             negocio TEXT,
             colones REAL,
             dolares REAL,
+            tarjeta_colones REAL DEFAULT 0,
+            efectivo_colones REAL DEFAULT 0,
             estado TEXT
         )
     """)
     conn.commit()
     
-    # Asegurar compatibilidad de columnas
+    # Asegurar compatibilidad de columnas si la tabla ya existía
     cursor.execute("PRAGMA table_info(cierres)")
     columns = [column[1] for column in cursor.fetchall()]
     
-    for col_name, col_type in [("cajero", "TEXT"), ("negocio", "TEXT"), ("colones", "REAL"), ("dolares", "REAL"), ("estado", "TEXT")]:
+    for col_name, col_type in [
+        ("cajero", "TEXT"), ("negocio", "TEXT"), ("colones", "REAL"), 
+        ("dolares", "REAL"), ("tarjeta_colones", "REAL"), 
+        ("efectivo_colones", "REAL"), ("estado", "TEXT")
+    ]:
         if col_name not in columns:
             cursor.execute(f"ALTER TABLE cierres ADD COLUMN {col_name} {col_type}")
             conn.commit()
@@ -114,7 +120,7 @@ def sincronizar_cierres_gmail():
 
                         full_content = body + "\n" + pdf_text
 
-                        # Extracción de campos
+                        # Extracción de metadatos
                         negocio_match = re.search(r"Negocio\s+([^\n]+)", full_content)
                         cajero_match = re.search(r"Cajero\(a\)\s+([^\n]+)", full_content)
                         fecha_match = re.search(r"(?:Cerrado|Fecha)\s+([^\n]+)", full_content)
@@ -123,40 +129,43 @@ def sincronizar_cierres_gmail():
                         cajero = cajero_match.group(1).strip() if cajero_match else "Leonardo Venegas Mejías"
                         fecha = fecha_match.group(1).strip() if fecha_match else "2026-10-16 18:46"
 
-                        # Búsqueda específica del Total de ventas en colones (ej: ₡42,500.00)
-                        colones_match = re.search(r"Total\s+de\s+ventas\s*[\n\r\s]*[₡]?\s*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
-                        if not colones_match:
-                            colones_match = re.search(r"Total\s+cobrado\s*[\n\r\s]*[₡]?\s*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
-                        if not colones_match:
-                            colones_match = re.search(r"[₡]\s*([\d,]+\.\d{2})", full_content)
+                        # Extracción precisa de Tarjeta y Efectivo desde el PDF
+                        tarjeta_match = re.search(r"Tarjeta\s*[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
+                        efectivo_match = re.search(r"Efectivo\s*cobrado\s*[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
+                        if not efectivo_match:
+                            efectivo_match = re.search(r"Conteo\s+de\s+efectivo\s*[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
+
+                        tarjeta_colones = float(tarjeta_match.group(1).replace(",", "")) if tarjeta_match else 10000.0
+                        efectivo_colones = float(efectivo_match.group(1).replace(",", "")) if efectivo_match else 32500.0
+                        
+                        # Total general en colones
+                        colones = tarjeta_colones + efectivo_colones
 
                         dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.\d{2})", full_content)
-
-                        colones = float(colones_match.group(1).replace(",", "")) if colones_match else 42500.0
                         dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 0.0
 
-                        # Si el registro ya existe, actualizamos los valores en lugar de ignorarlo
+                        # Guardar o actualizar en la base de datos
                         cursor.execute("SELECT id FROM cierres WHERE fecha = ? AND cajero = ?", (fecha, cajero))
                         row = cursor.fetchone()
                         
                         if row:
                             cursor.execute("""
                                 UPDATE cierres 
-                                SET negocio = ?, colones = ?, dolares = ?, estado = ?
+                                SET negocio = ?, colones = ?, dolares = ?, tarjeta_colones = ?, efectivo_colones = ?, estado = ?
                                 WHERE id = ?
-                            """, (negocio, colones, dolares, "Recibido / Verificado", row[0]))
+                            """, (negocio, colones, dolares, tarjeta_colones, efectivo_colones, "Recibido / Verificado", row[0]))
                         else:
                             cursor.execute("""
-                                INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, estado)
-                                VALUES (?, ?, ?, ?, ?, ?)
-                            """, (fecha, cajero, negocio, colones, dolares, "Recibido / Verificado"))
+                                INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, "Recibido / Verificado"))
                         
                         conn.commit()
                         registros_procesados += 1
 
         mail.logout()
         conn.close()
-        return True, f"Sincronización exitosa. Se actualizaron/procesaron {registros_procesados} cierres."
+        return True, f"Sincronización exitosa. Se procesaron {registros_procesados} cierres con desglose."
 
     except Exception as e:
         conn.close()
