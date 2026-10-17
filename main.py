@@ -150,7 +150,7 @@ elif os.path.exists("logo.jpg"):
 
 st.sidebar.markdown("### **Menú Principal**")
 opcion = st.sidebar.radio(
-    "",
+    "Selecciona una opción:",
     [
         "📊 Dashboard Consolidado", 
         "📈 Ventas vs. Proyección 2026", 
@@ -159,7 +159,8 @@ opcion = st.sidebar.radio(
         "📥 Cierres de Caja", 
         "📝 Registro de Obligaciones",
         "⚡ Monitoreo Cripto (Binance)"
-    ]
+    ],
+    label_visibility="collapsed"
 )
 
 # Enrutador de módulos
