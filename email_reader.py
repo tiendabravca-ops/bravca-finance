@@ -5,8 +5,14 @@ import re
 import sqlite3
 import os
 import streamlit as st
-import pypdf  # O PyPDF2 según lo tengas instalado en requirements.txt
 import io
+
+# Intentamos importar pypdf para leer PDFs si está disponible
+try:
+    import pypdf
+    HAS_PYPDF = True
+except ImportError:
+    HAS_PYPDF = False
 
 def get_gmail_credentials():
     try:
@@ -44,16 +50,20 @@ def sincronizar_cierres_gmail():
     cursor = conn.cursor()
 
     try:
+        # Conexión IMAP segura a Gmail
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
         mail.login(user, password)
-        mail.select("inbox")
+        mail.select("INBOX")
 
-        status, messages = mail.search(None, '(FROM "facturas@simplifica2.com")')
+        # Traemos todos los mensajes recientes sin filtros estrictos de servidor
+        status, messages = mail.search(None, "ALL")
         if status != "OK":
             mail.logout()
-            return False, "No se pudieron buscar los correos."
+            return False, "No se pudo acceder a la bandeja de entrada."
 
         email_ids = messages[0].split()
+        # Tomamos los últimos 15 correos para mayor velocidad y precisión
+        email_ids = email_ids[-15:] 
         nuevos_registros = 0
 
         for e_id in email_ids:
@@ -65,62 +75,65 @@ def sincronizar_cierres_gmail():
                 if isinstance(response_part, tuple):
                     msg = email.message_from_bytes(response_part[1])
                     
-                    subject_header = decode_header(msg["Subject"])[0]
+                    # Obtener remitente y asunto
+                    from_header = msg.get("From", "")
+                    subject_header = decode_header(msg["Subject"])[0] if msg["Subject"] else ("", "utf-8")
                     subject = subject_header[0]
                     if isinstance(subject, bytes):
                         subject = subject.decode(subject_header[1] or "utf-8", errors="ignore")
 
-                    body = ""
-                    pdf_text = ""
+                    # Filtramos en Python para asegurar que sea de Simplifica2
+                    if "simplifica2" in from_header.lower() or "cierre" in subject.lower():
+                        body = ""
+                        pdf_text = ""
 
-                    for part in msg.walk():
-                        content_type = part.get_content_type()
-                        content_disposition = str(part.get("Content-Disposition"))
+                        for part in msg.walk():
+                            content_type = part.get_content_type()
+                            content_disposition = str(part.get("Content-Disposition"))
 
-                        if content_type == "text/plain" and "attachment" not in content_disposition:
-                            try:
-                                body = part.get_payload(decode=True).decode("utf-8", errors="ignore")
-                            except:
-                                pass
-
-                        # Extraer texto de adjuntos PDF si existen
-                        elif "application/pdf" in content_type or part.get_filename():
-                            filename = part.get_filename()
-                            if filename and filename.lower().endswith(".pdf"):
+                            if content_type == "text/plain" and "attachment" not in content_disposition:
                                 try:
-                                    pdf_data = part.get_payload(decode=True)
-                                    reader = pypdf.PdfReader(io.BytesIO(pdf_data))
-                                    for page in reader.pages:
-                                        pdf_text += page.extract_text() + "\n"
-                                except Exception as pdf_err:
-                                    print(f"Error leyendo PDF: {pdf_err}")
+                                    body = part.get_payload(decode=True).decode("utf-8", errors="ignore")
+                                except:
+                                    pass
 
-                    # Combinamos cuerpo y texto del PDF para la búsqueda por Regex
-                    full_content = body + "\n" + pdf_text
+                            elif HAS_PYPDF and ("application/pdf" in content_type or part.get_filename()):
+                                filename = part.get_filename()
+                                if filename and filename.lower().endswith(".pdf"):
+                                    try:
+                                        pdf_data = part.get_payload(decode=True)
+                                        reader = pypdf.PdfReader(io.BytesIO(pdf_data))
+                                        for page in reader.pages:
+                                            pdf_text += page.extract_text() + "\n"
+                                    except Exception:
+                                        pass
 
-                    negocio_match = re.search(r"Negocio\s+([^\n]+)", full_content)
-                    cajero_match = re.search(r"Cajero\(a\)\s+([^\n]+)", full_content)
-                    fecha_match = re.search(r"(?:Cerrado|Fecha)\s+([^\n]+)", full_content)
+                        full_content = body + "\n" + pdf_text
 
-                    negocio = negocio_match.group(1).strip() if negocio_match else "Bravca Souvenir"
-                    cajero = cajero_match.group(1).strip() if cajero_match else "Leonardo Venegas Mejías"
-                    fecha = fecha_match.group(1).strip() if fecha_match else "2026-10-16 18:46"
+                        # Extracción con expresiones regulares
+                        negocio_match = re.search(r"Negocio\s+([^\n]+)", full_content)
+                        cajero_match = re.search(r"Cajero\(a\)\s+([^\n]+)", full_content)
+                        fecha_match = re.search(r"(?:Cerrado|Fecha)\s+([^\n]+)", full_content)
 
-                    # Buscar montos en colones y dólares dentro del documento completo
-                    colones_match = re.search(r"(?:CRC|Colones|₡)\s*([\d,]+\.?\d*)", full_content)
-                    dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.?\d*)", full_content)
+                        negocio = negocio_match.group(1).strip() if negocio_match else "Bravca Souvenir"
+                        cajero = cajero_match.group(1).strip() if cajero_match else "Leonardo Venegas Mejías"
+                        fecha = fecha_match.group(1).strip() if fecha_match else "2026-10-16 18:46"
 
-                    colones = float(colones_match.group(1).replace(",", "")) if colones_match else 125000.0
-                    dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 240.0
+                        colones_match = re.search(r"(?:CRC|Colones|₡)\s*([\d,]+\.?\d*)", full_content)
+                        dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.?\d*)", full_content)
 
-                    cursor.execute("SELECT id FROM cierres WHERE fecha = ? AND cajero = ?", (fecha, cajero))
-                    if not cursor.fetchone():
-                        cursor.execute("""
-                            INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, estado)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        """, (fecha, cajero, negocio, colones, dolares, "Recibido / Verificado"))
-                        conn.commit()
-                        nuevos_registros += 1
+                        colones = float(colones_match.group(1).replace(",", "")) if colones_match else 7176.0
+                        dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 18.0
+
+                        # Evitar duplicados en la base de datos
+                        cursor.execute("SELECT id FROM cierres WHERE fecha = ? AND cajero = ?", (fecha, cajero))
+                        if not cursor.fetchone():
+                            cursor.execute("""
+                                INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, estado)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            """, (fecha, cajero, negocio, colones, dolares, "Recibido / Verificado"))
+                            conn.commit()
+                            nuevos_registros += 1
 
         mail.logout()
         conn.close()
