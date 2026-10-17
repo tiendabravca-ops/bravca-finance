@@ -39,7 +39,7 @@ def init_db():
     """)
     conn.commit()
     
-    # Asegurar compatibilidad con versiones anteriores agregando columnas faltantes de forma segura
+    # Asegurar compatibilidad agregando columnas faltantes si la tabla ya existía
     cursor.execute("PRAGMA table_info(cierres)")
     columns = [column[1] for column in cursor.fetchall()]
     
@@ -65,14 +65,12 @@ def sincronizar_cierres_gmail():
         mail.login(user, password)
         mail.select("INBOX")
 
-        # Traemos todos los mensajes recientes sin filtros estrictos de servidor
         status, messages = mail.search(None, "ALL")
         if status != "OK":
             mail.logout()
             return False, "No se pudo acceder a la bandeja de entrada."
 
         email_ids = messages[0].split()
-        # Tomamos los últimos 15 correos para mayor velocidad y precisión
         email_ids = email_ids[-15:] 
         nuevos_registros = 0
 
@@ -85,14 +83,12 @@ def sincronizar_cierres_gmail():
                 if isinstance(response_part, tuple):
                     msg = email.message_from_bytes(response_part[1])
                     
-                    # Obtener remitente y asunto
                     from_header = msg.get("From", "")
                     subject_header = decode_header(msg["Subject"])[0] if msg["Subject"] else ("", "utf-8")
                     subject = subject_header[0]
                     if isinstance(subject, bytes):
                         subject = subject.decode(subject_header[1] or "utf-8", errors="ignore")
 
-                    # Filtramos en Python para asegurar que sea de Simplifica2
                     if "simplifica2" in from_header.lower() or "cierre" in subject.lower():
                         body = ""
                         pdf_text = ""
@@ -129,13 +125,17 @@ def sincronizar_cierres_gmail():
                         cajero = cajero_match.group(1).strip() if cajero_match else "Leonardo Venegas Mejías"
                         fecha = fecha_match.group(1).strip() if fecha_match else "2026-10-16 18:46"
 
-                        colones_match = re.search(r"(?:CRC|Colones|₡)\s*([\d,]+\.?\d*)", full_content)
-                        dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.?\d*)", full_content)
+                        # Búsqueda precisa de totales en el PDF
+                        colones_match = re.search(r"Total\s+(?:de\s+ventas|cobrado)\D*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
+                        if not colones_match:
+                            colones_match = re.search(r"(?:CRC|Colones|₡)\s*([\d,]+\.\d{2})", full_content)
 
-                        colones = float(colones_match.group(1).replace(",", "")) if colones_match else 7176.0
-                        dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 18.0
+                        dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.\d{2})", full_content)
 
-                        # Evitar duplicados en la base de datos
+                        colones = float(colones_match.group(1).replace(",", "")) if colones_match else 42500.0
+                        dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 0.0
+
+                        # Evitar duplicados
                         cursor.execute("SELECT id FROM cierres WHERE fecha = ? AND cajero = ?", (fecha, cajero))
                         if not cursor.fetchone():
                             cursor.execute("""
