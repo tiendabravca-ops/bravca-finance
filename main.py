@@ -16,23 +16,25 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilos CSS - Estética Clean SaaS / Modern Dashboard
+# 1. Cargar la librería de iconos FontAwesome externamente
+st.markdown('<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">', unsafe_allow_html=True)
+
+# 2. Estilos CSS - Estética Clean SaaS / Modern Dashboard
 st.markdown("""
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-    /* 1. Fondo Principal Limpio */
+    /* Fondo Principal Limpio */
     .stApp {
         background-color: #F4F6F9 !important;
         color: #102A43 !important;
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     
-    /* 2. Regla General de Texto */
+    /* Regla General de Texto */
     p, span, label, .stMarkdown, div {
         color: #102A43;
     }
 
-    /* 3. Barra Lateral en Azul Marino Profundo */
+    /* Barra Lateral en Azul Marino Profundo */
     [data-testid="stSidebar"] {
         background-color: #102A43 !important;
         border-right: none !important;
@@ -63,7 +65,7 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
 
-    /* 4. Tarjetas KPIs tipo Clean Card con sombra flotante */
+    /* Tarjetas KPIs tipo Clean Card con sombra flotante */
     .brabca-card {
         background-color: #FFFFFF !important;
         border: 1px solid #E2E8F0 !important;
@@ -104,7 +106,7 @@ st.markdown("""
         letter-spacing: -0.5px;
     }
 
-    /* 5. Encabezado Principal */
+    /* Encabezado Principal */
     .brand-title {
         font-size: 2.2rem;
         font-weight: 900;
@@ -121,7 +123,7 @@ st.markdown("""
         margin-bottom: 20px;
     }
 
-    /* 6. Botones con Estilo SaaS Moderno */
+    /* Botones con Estilo SaaS Moderno */
     .stButton>button {
         background: #102A43 !important;
         color: #FFFFFF !important;
@@ -139,7 +141,7 @@ st.markdown("""
         box-shadow: 0 6px 16px rgba(245, 166, 35, 0.3) !important;
     }
 
-    /* 7. Tablas y Dataframes */
+    /* Tablas y Dataframes */
     [data-testid="stDataFrame"] {
         background-color: #FFFFFF !important;
         border: 1px solid #E2E8F0 !important;
@@ -147,7 +149,7 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
     }
 
-    /* 8. Ajustes Responsivos */
+    /* Ajustes Responsivos */
     @media (max-width: 768px) {
         .brand-title {
             font-size: 1.6rem;
