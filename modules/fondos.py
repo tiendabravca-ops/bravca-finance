@@ -8,92 +8,41 @@ import os
 def run():
     st.markdown("##### 🏦 CONSOLIDADO DE FONDOS, RESERVAS Y CRONOGRAMA")
     
-    # Asegurar que la carpeta 'databases' exista
-    os.makedirs('databases', exist_ok=True)
+    # Conexión directa a nuestra base de datos consolidada de cierres
+    db_path = "db_cierres.db"
     
-    # Conexión a la base de datos
-    conn = sqlite3.connect('databases/db_cierres.db', timeout=10.0)
-    cursor = conn.cursor()
-    
-    # Crear la tabla si no existe
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS cierres_caja (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tienda TEXT,
-            fecha_cierre TEXT,
-            efectivo_cobrado REAL
-        )
-    ''')
-    conn.commit()
-    
-    # Verificar si existen datos del mes actual (octubre 2026)
-    cursor.execute("SELECT COUNT(*) FROM cierres_caja WHERE fecha_cierre LIKE '2026-10-__'")
-    count = cursor.fetchone()[0]
-    
-    if count < 5:
-        datos_diarios = [
-            ("Santa Elena", "2026-10-01", 31900.0),
-            ("Santa Elena", "2026-10-02", 24120.0),
-            ("Santa Elena", "2026-10-03", 26550.0),
-            ("Santa Elena", "2026-10-04", 56300.0),
-            ("Santa Elena", "2026-10-05", 22320.0),
-            ("Santa Elena", "2026-10-06", 120625.0),
-            ("Santa Elena", "2026-10-07", 128260.0),
-            ("Santa Elena", "2026-10-08", 151810.0),
-            ("Santa Elena", "2026-10-09", 140625.0),
-            ("Santa Elena", "2026-10-10", 35145.0),
-            ("Santa Elena", "2026-10-11", 30060.0),
-            ("Santa Elena", "2026-10-12", 59199.12),
-            ("Santa Elena", "2026-10-13", 75100.0),
-            ("Santa Elena", "2026-10-14", 104400.0),
-            ("Santa Elena", "2026-10-15", 10700.0),
-            # Datos de Monteverde Extremo
-            ("Monteverde Extremo", "2026-10-01", 15000.0),
-            ("Monteverde Extremo", "2026-10-05", 20000.0),
-            ("Monteverde Extremo", "2026-10-10", 45000.0),
-            ("Monteverde Extremo", "2026-10-12", 30000.0),
-            ("Monteverde Extremo", "2026-10-15", 221925.0)
-        ]
-        for tienda, fecha, monto in datos_diarios:
-            try:
-                cursor.execute("""
-                    INSERT INTO cierres_caja (tienda, fecha_cierre, efectivo_cobrado)
-                    VALUES (?, ?, ?)
-                """, (tienda, fecha, monto))
-            except Exception:
-                pass
-        conn.commit()
-
-    try:
-        df_ventas = pd.read_sql_query("SELECT tienda, fecha_cierre, efectivo_cobrado FROM cierres_caja", conn)
-    except Exception:
-        df_ventas = pd.DataFrame()
-    conn.close()
+    df_ventas = pd.DataFrame()
+    if os.path.exists(db_path):
+        try:
+            conn = sqlite3.connect(db_path, timeout=10.0)
+            # Consultamos la tabla oficial 'cierres' donde se guardan los datos reales y el histórico
+            df_ventas = pd.read_sql_query("SELECT negocio as tienda, fecha as fecha_cierre, colones as efectivo_cobrado FROM cierres", conn)
+            conn.close()
+        except Exception:
+            pass
     
     v_1_10, v_11_20, v_21_31, total_mes = 0.0, 0.0, 0.0, 0.0
     
     if not df_ventas.empty:
         df_ventas['monto'] = pd.to_numeric(df_ventas['efectivo_cobrado'], errors='coerce').fillna(0)
-        total_mes = df_ventas['monto'].sum()
         
+        # Filtramos estrictamente el mes de octubre de 2026
         df_ventas['fecha_dt'] = pd.to_datetime(df_ventas['fecha_cierre'], errors='coerce')
-        validas = df_ventas[df_ventas['fecha_dt'].notna()].copy()
+        df_octubre = df_ventas[(df_ventas['fecha_dt'].dt.year == 2026) & (df_ventas['fecha_dt'].dt.month == 10)].copy()
         
-        if not validas.empty:
-            validas['dia'] = validas['fecha_dt'].dt.day
-            v_1_10 = validas[(validas['dia'] >= 1) & (validas['dia'] <= 10)]['monto'].sum()
-            v_11_20 = validas[(validas['dia'] >= 11) & (validas['dia'] <= 20)]['monto'].sum()
-            v_21_31 = validas[(validas['dia'] >= 21)]['monto'].sum()
-        else:
-            v_1_10 = total_mes * 0.40
-            v_11_20 = total_mes * 0.35
-            v_21_31 = total_mes * 0.25
+        if not df_octubre.empty:
+            total_mes = df_octubre['monto'].sum()
+            df_octubre['dia'] = df_octubre['fecha_dt'].dt.day
+            
+            v_1_10 = df_octubre[(df_octubre['dia'] >= 1) & (df_octubre['dia'] <= 10)]['monto'].sum()
+            v_11_20 = df_octubre[(df_octubre['dia'] >= 11) & (df_octubre['dia'] <= 20)]['monto'].sum()
+            v_21_31 = df_octubre[(df_octubre['dia'] >= 21)]['monto'].sum()
 
     tab_sobres, tab_gantt = st.tabs(["📦 Asignación Automática por Sobres", "📊 Cronograma Operativo (Flujo de Caja)"])
     
     with tab_sobres:
         st.markdown("###### **Distribución Automática por Bloques Operativos (Ambas Tiendas)**")
-        st.caption("Los montos logrados suman las ventas combinadas de Santa Elena y Monteverde Extremo.")
+        st.caption("Los montos logrados suman las ventas combinadas de Santa Elena y Monteverde Extremo desde la base de datos de cierres.")
         
         datos_sobres = [
             {"nombre_fondo": "FONDO DE EMERGENCIA (Días 1-10)", "monto_meta_colones": 1000000.0, "monto_logrado_colones": v_1_10, "prioridad": 1},
