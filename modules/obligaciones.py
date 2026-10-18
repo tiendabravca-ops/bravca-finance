@@ -153,9 +153,17 @@ def run():
                     st.error("Por favor ingrese un monto válido mayor a cero.")
 
     st.markdown("---")
-    st.markdown("###### 📋 Registro Consolidado de Egresos (2026)")
+    
+    # Controles de Filtro por Tienda y Visualización
+    col_filtro, col_vacio = st.columns([2, 2])
+    with col_filtro:
+        filtro_tienda = st.selectbox(
+            "🔍 Filtrar Egresos por Tienda", 
+            ["Consolidado (Ambas Tiendas)", "Santa Elena", "Monteverde Extremo"],
+            key="filtro_tienda_egresos"
+        )
 
-    # Consulta y despliegue de registros ordenados por fecha de pago
+    # Consulta de registros desde la base de datos
     conn = sqlite3.connect(db_path)
     df_registros = pd.read_sql_query(
         "SELECT id, fecha_pago as 'Fecha Pago', periodicidad as Periodicidad, mes as Mes, tienda as Tienda, tipo_gasto as Tipo, categoria as Categoria, descripcion as Descripcion, monto as Monto FROM obligaciones WHERE anio = 2026 ORDER BY fecha_pago DESC", 
@@ -164,8 +172,31 @@ def run():
     conn.close()
 
     if not df_registros.empty:
+        # Aplicar el filtro según la tienda seleccionada
+        if filtro_tienda != "Consolidado (Ambas Tiendas)":
+            df_filtrado = df_registros[df_registros['Tienda'].isin([filtro_tienda, "Consolidado (Ambas Tiendas)"])].copy()
+        else:
+            df_filtrado = df_registros.copy()
+
+        # Cálculo de totales
+        total_egresos = df_filtrado['Monto'].sum()
+        total_fijos = df_filtrado[df_filtrado['Tipo'] == 'Fijo']['Monto'].sum()
+        total_variables = df_filtrado[df_filtrado['Tipo'] == 'Variable']['Monto'].sum()
+
+        # Tarjetas KPI de resumen
+        k1, k2, k3 = st.columns(3)
+        with k1:
+            st.metric("🔴 TOTAL EGRESOS PROGRAMADOS", f"₡ {total_egresos:,.2f}", delta=filtro_tienda, delta_color="inverse")
+        with k2:
+            st.metric("📌 GASTOS FIJOS / OBLIGACIONES", f"₡ {total_fijos:,.2f}")
+        with k3:
+            st.metric("⚡ GASTOS VARIABLES / OPERATIVOS", f"₡ {total_variables:,.2f}")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Mostrar Tabla de Resultados
         st.dataframe(
-            df_registros,
+            df_filtrado,
             column_config={
                 "Monto": st.column_config.NumberColumn("Monto (₡)", format="₡ %,.2f"),
                 "Fecha Pago": st.column_config.DateColumn("Fecha Correspondiente", format="YYYY-MM-DD"),
