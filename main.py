@@ -1,6 +1,5 @@
 import streamlit as st
 import os
-from PIL import Image
 import database
 import modules.dashboard as dash
 import modules.proyecciones as proj
@@ -55,6 +54,12 @@ st.markdown("""
     div[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
         background-color: rgba(245, 166, 35, 0.2);
         color: #F5A623 !important;
+    }
+
+    /* Estilizado de la tarjeta del logo en la barra lateral */
+    [data-testid="stSidebar"] [data-testid="stImage"] img {
+        border-radius: 14px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
 
     /* 4. Tarjetas KPIs tipo Clean Card con sombra flotante */
@@ -162,20 +167,11 @@ database.init_db()
 database.cargar_ventas_octubre_simplifica2()
 database.auto_generar_gastos_fijos()
 
-# --- BARRA LATERAL CON TARJETA DE LOGO INTEGRADA Y GESTIÓN DIRECTA ---
+# --- LOGO EN LA BARRA LATERAL ---
 if os.path.exists("logo.png"):
     st.sidebar.image("logo.png", use_container_width=True)
 elif os.path.exists("logo.jpg"):
     st.sidebar.image("logo.jpg", use_container_width=True)
-
-# Expander discreto para cambiar el logo directamente desde la interfaz
-with st.sidebar.expander("⚙️ Cambiar / Actualizar Logo"):
-    uploaded_logo = st.file_uploader("Sube la nueva imagen (PNG/JPG)", type=["png", "jpg", "jpeg"], key="uploader_sidebar_logo")
-    if uploaded_logo is not None:
-        image = Image.open(uploaded_logo)
-        image.save("logo.png")
-        st.success("¡Logo actualizado con éxito!")
-        st.rerun()
 
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 st.sidebar.markdown("### **Menú Principal**")
@@ -194,7 +190,7 @@ opcion = st.sidebar.radio(
     label_visibility="collapsed"
 )
 
-# Encabezado visual principal de la app
+# Encabezado visual principal
 st.markdown('<div class="brand-title">bráˇca souvenir</div>', unsafe_allow_html=True)
 st.markdown('<div class="brand-sub">SISTEMA FINANCIERO & TESORERÍA • SANTA ELENA | MONTEVERDE EXTREMO</div>', unsafe_allow_html=True)
 
