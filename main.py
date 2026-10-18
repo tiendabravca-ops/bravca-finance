@@ -13,86 +13,87 @@ st.set_page_config(
     page_title="brá'ca Financial Core", 
     page_icon="🌿", 
     layout="wide",
-    initial_sidebar_state="collapsed"  # Colapsado por defecto para vista móvil (sándwich ☰)
+    initial_sidebar_state="expanded"
 )
 
-# Estilos CSS - Paleta Estilo Binance / Nexo Pro Dark Mode
+# Estilos CSS - Estética Clean SaaS / Modern Dashboard (Inspirado en la referencia)
 st.markdown("""
     <style>
-    /* 1. Fondo Principal Pro Dark */
+    /* 1. Fondo Principal Limpio y Minimalista */
     .stApp {
-        background-color: #0B0E11 !important;
-        color: #EAECSF !important;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+        background-color: #F4F6F9 !important;
+        color: #102A43 !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     
-    /* 2. Regla General de Texto Oscuro / Claro */
+    /* 2. Regla General de Texto */
     p, span, label, .stMarkdown, div {
-        color: #EAECSF;
+        color: #102A43;
     }
 
-    /* 3. Menú Lateral / Sidebar estilo Crypto Terminal */
+    /* 3. Barra Lateral / Sidebar en Azul Marino Profundo */
     [data-testid="stSidebar"] {
-        background-color: #12161C !important;
-        border-right: 1px solid #2B313A !important;
+        background-color: #102A43 !important;
+        border-right: none !important;
+        padding-top: 20px;
     }
     [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
-        color: #848E9C !important;
+        color: #FFFFFF !important;
         font-weight: 600;
     }
     
-    /* Estilo del Selector Radio en Sidebar */
+    /* Estilo del Selector Radio en Sidebar estilo Dashboard UI */
     div[data-testid="stSidebar"] div[role="radiogroup"] > label {
-        background-color: #181A20;
-        border: 1px solid #2B313A;
-        border-radius: 8px;
-        padding: 8px 12px;
-        margin-bottom: 6px;
+        background-color: rgba(255, 255, 255, 0.05);
+        border: none;
+        border-radius: 10px;
+        padding: 10px 14px;
+        margin-bottom: 8px;
         transition: all 0.2s ease;
     }
     div[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
-        border-color: #F0B90B;
-        color: #F0B90B !important;
+        background-color: rgba(245, 166, 35, 0.2);
+        color: #F5A623 !important;
     }
 
-    /* 4. Tarjetas KPIs Binance / Nexo Style */
+    /* 4. Tarjetas KPIs tipo Clean Card con sombra flotante */
     .brabca-card {
-        background-color: #181A20 !important;
-        border: 1px solid #2B313A !important;
-        border-radius: 12px;
-        padding: 18px 20px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-        margin-bottom: 12px;
-        transition: transform 0.2s ease, border-color 0.2s ease;
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 16px;
+        padding: 20px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.03);
+        margin-bottom: 16px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
     .brabca-card:hover {
-        border-color: #F0B90B !important;
-        transform: translateY(-2px);
+        transform: translateY(-3px);
+        box-shadow: 0 15px 30px rgba(0, 0, 0, 0.06);
     }
     .card-label {
-        font-size: 0.8rem;
-        font-weight: 800;
+        font-size: 0.75rem;
+        font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 1px;
-        color: #848E9C !important;
-        margin-bottom: 6px;
+        color: #627D98 !important;
+        margin-bottom: 8px;
     }
     .card-value {
         font-size: 2rem;
-        font-weight: 900;
-        color: #0ECB81 !important; /* Verde Ganancia Binance */
+        font-weight: 800;
+        color: #102A43 !important;
         letter-spacing: -0.5px;
     }
     .card-value-alert {
         font-size: 2rem;
-        font-weight: 900;
-        color: #F6465D !important; /* Rojo Bajista Binance */
+        font-weight: 800;
+        color: #D9534F !important;
         letter-spacing: -0.5px;
     }
     .card-value-gold {
         font-size: 2rem;
-        font-weight: 900;
-        color: #F0B90B !important; /* Dorado Binance */
+        font-weight: 800;
+        color: #F5A623 !important; /* Ámbar / Naranja Corporativo */
         letter-spacing: -0.5px;
     }
 
@@ -100,55 +101,56 @@ st.markdown("""
     .brand-title {
         font-size: 2.2rem;
         font-weight: 900;
-        color: #FFFFFF !important;
+        color: #102A43 !important;
         letter-spacing: -1px;
         margin-bottom: 2px;
     }
     .brand-sub {
-        font-size: 0.85rem;
+        font-size: 0.8rem;
         font-weight: 700;
-        color: #F0B90B !important;
+        color: #F5A623 !important;
         letter-spacing: 1.5px;
         text-transform: uppercase;
         margin-bottom: 20px;
     }
 
-    /* 6. Botones Pro Crypto */
+    /* 6. Botones con Estilo SaaS Moderno */
     .stButton>button {
-        background: linear-gradient(135deg, #F0B90B 0%, #D4A007 100%) !important;
-        color: #0B0E11 !important;
-        border-radius: 8px !important;
+        background: #102A43 !important;
+        color: #FFFFFF !important;
+        border-radius: 10px !important;
         border: none !important;
         padding: 10px 18px !important;
-        font-weight: 800 !important;
+        font-weight: 700 !important;
         width: 100%;
-        box-shadow: 0 2px 8px rgba(240, 185, 11, 0.2);
+        box-shadow: 0 4px 12px rgba(16, 42, 67, 0.15);
         transition: all 0.2s ease !important;
     }
     .stButton>button:hover {
-        background: linear-gradient(135deg, #FFC81A 0%, #F0B90B 100%) !important;
-        color: #000000 !important;
-        box-shadow: 0 0 12px rgba(240, 185, 11, 0.5) !important;
+        background: #F5A623 !important;
+        color: #102A43 !important;
+        box-shadow: 0 6px 16px rgba(245, 166, 35, 0.3) !important;
     }
 
     /* 7. Tablas y Dataframes */
     [data-testid="stDataFrame"] {
-        background-color: #181A20 !important;
-        border: 1px solid #2B313A !important;
-        border-radius: 10px;
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
     }
 
-    /* 8. Ajustes para pantallas pequeñas (móviles) */
+    /* 8. Ajustes para pantallas pequeñas */
     @media (max-width: 768px) {
         .brand-title {
-            font-size: 1.7rem;
+            font-size: 1.6rem;
         }
         .brand-sub {
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             letter-spacing: 1px;
         }
         .card-value, .card-value-alert, .card-value-gold {
-            font-size: 1.6rem;
+            font-size: 1.5rem;
         }
     }
     </style>
