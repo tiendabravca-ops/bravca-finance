@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import os
+from datetime import datetime
 
 def inicializar_bd():
     db_path = "data/sistema_financiero.db"
@@ -9,7 +10,7 @@ def inicializar_bd():
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # Crear tabla base si no existe
+    # Tabla base para obligaciones y egresos
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS obligaciones (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,16 +22,18 @@ def inicializar_bd():
         )
     ''')
     
-    # Agregar automáticamente las nuevas columnas si la tabla ya existía con estructura vieja
-    try:
-        cursor.execute("ALTER TABLE obligaciones ADD COLUMN tienda TEXT DEFAULT 'Consolidado (Ambas Tiendas)'")
-    except Exception:
-        pass
-
-    try:
-        cursor.execute("ALTER TABLE obligaciones ADD COLUMN tipo_gasto TEXT DEFAULT 'Fijo'")
-    except Exception:
-        pass
+    # Migraciones automáticas para columnas dinámicas
+    migraciones = [
+        "ALTER TABLE obligaciones ADD COLUMN tienda TEXT DEFAULT 'Consolidado (Ambas Tiendas)'",
+        "ALTER TABLE obligaciones ADD COLUMN tipo_gasto TEXT DEFAULT 'Fijo'",
+        "ALTER TABLE obligaciones ADD COLUMN fecha_pago TEXT DEFAULT ''"
+    ]
+    
+    for mig in migraciones:
+        try:
+            cursor.execute(mig)
+        except Exception:
+            pass
 
     conn.commit()
     conn.close()
@@ -40,37 +43,48 @@ def run():
     inicializar_bd()
 
     db_path = "data/sistema_financiero.db"
+    mapping_meses = {
+        1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
+        5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto',
+        9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
+    }
 
-    # Pestañas para separar la gestión
-    tab_fijos, tab_variables = st.tabs(["📌 Gastos Fijos (Alquileres, Planilla, etc.)", "⚡ Gastos Variables (Insumos, Extras, etc.)"])
+    # Pestañas para separar la gestión por tipo de gasto
+    tab_fijos, tab_variables = st.tabs([
+        "📌 Gastos Fijos (Alquileres, Planilla, etc.)", 
+        "⚡ Gastos Variables (Insumos, Extras, etc.)"
+    ])
 
     with tab_fijos:
         with st.form("form_gasto_fijo", clear_on_submit=True):
             st.markdown("###### Registrar Gasto Fijo / Obligación Operativa")
             c1, c2, c3 = st.columns(3)
             with c1:
-                anio = st.selectbox("Año", [2026, 2025], key="fijo_anio")
-                mes = st.selectbox("Mes", ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'], key="fijo_mes")
-            with c2:
+                fecha_pago_dt = st.date_input("Fecha Correspondiente / Límite de Pago", value=datetime.now(), key="fijo_fecha_pago")
                 tienda = st.selectbox("Tienda / Destino", ["Consolidado (Ambas Tiendas)", "Santa Elena", "Monteverde Extremo"], key="fijo_tienda")
+            with c2:
                 categoria = st.selectbox("Categoría", ["Alquileres", "Planilla", "Servicios Públicos", "Préstamos / Financiamiento", "Otros Fijos"], key="fijo_cat")
-            with c3:
                 monto = st.number_input("Monto en Colones (₡)", min_value=0.0, step=10000.0, key="fijo_monto")
+            with c3:
                 descripcion = st.text_input("Descripción / Proveedor", key="fijo_desc")
-            
-            submitted_fijo = st.form_submit_button("💾 Guardar Gasto Fijo")
+                st.markdown("<br>", unsafe_allow_html=True)
+                submitted_fijo = st.form_submit_button("💾 Guardar Gasto Fijo")
 
             if submitted_fijo:
                 if monto > 0:
+                    anio = fecha_pago_dt.year
+                    mes = mapping_meses.get(fecha_pago_dt.month, 'enero')
+                    fecha_pago_str = fecha_pago_dt.strftime("%Y-%m-%d")
+
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
                     cursor.execute(
-                        "INSERT INTO obligaciones (anio, mes, tienda, tipo_gasto, categoria, descripcion, monto) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (anio, mes, tienda, "Fijo", categoria, descripcion, monto)
+                        "INSERT INTO obligaciones (anio, mes, tienda, tipo_gasto, categoria, descripcion, monto, fecha_pago) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (anio, mes, tienda, "Fijo", categoria, descripcion, monto, fecha_pago_str)
                     )
                     conn.commit()
                     conn.close()
-                    st.success(f"¡Gasto fijo de ₡ {monto:,.2f} registrado con éxito!")
+                    st.success(f"¡Gasto fijo de ₡ {monto:,.2f} programado para el {fecha_pago_str} registrado con éxito!")
                     st.rerun()
                 else:
                     st.error("Por favor ingrese un monto válido mayor a cero.")
@@ -80,28 +94,31 @@ def run():
             st.markdown("###### Registrar Gasto Variable / Operativo Diario")
             c1, c2, c3 = st.columns(3)
             with c1:
-                anio_v = st.selectbox("Año", [2026, 2025], key="var_anio")
-                mes_v = st.selectbox("Mes", ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'], key="var_mes")
-            with c2:
+                fecha_pago_var_dt = st.date_input("Fecha Correspondiente / Fecha de Pago", value=datetime.now(), key="var_fecha_pago")
                 tienda_v = st.selectbox("Tienda / Destino", ["Consolidado (Ambas Tiendas)", "Santa Elena", "Monteverde Extremo"], key="var_tienda")
+            with c2:
                 categoria_v = st.selectbox("Categoría", ["Proveedores / Mercadería", "Mantenimiento & Reparaciones", "Insumos de Tienda", "Comisiones / Extras", "Otros Variables"], key="var_cat")
-            with c3:
                 monto_v = st.number_input("Monto en Colones (₡)", min_value=0.0, step=5000.0, key="var_monto")
+            with c3:
                 descripcion_v = st.text_input("Descripción / Proveedor", key="var_desc")
-            
-            submitted_var = st.form_submit_button("💾 Guardar Gasto Variable")
+                st.markdown("<br>", unsafe_allow_html=True)
+                submitted_var = st.form_submit_button("💾 Guardar Gasto Variable")
 
             if submitted_var:
                 if monto_v > 0:
+                    anio_v = fecha_pago_var_dt.year
+                    mes_v = mapping_meses.get(fecha_pago_var_dt.month, 'enero')
+                    fecha_pago_var_str = fecha_pago_var_dt.strftime("%Y-%m-%d")
+
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
                     cursor.execute(
-                        "INSERT INTO obligaciones (anio, mes, tienda, tipo_gasto, categoria, descripcion, monto) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (anio_v, mes_v, tienda_v, "Variable", categoria_v, descripcion_v, monto_v)
+                        "INSERT INTO obligaciones (anio, mes, tienda, tipo_gasto, categoria, descripcion, monto, fecha_pago) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (anio_v, mes_v, tienda_v, "Variable", categoria_v, descripcion_v, monto_v, fecha_pago_var_str)
                     )
                     conn.commit()
                     conn.close()
-                    st.success(f"¡Gasto variable de ₡ {monto_v:,.2f} registrado con éxito!")
+                    st.success(f"¡Gasto variable de ₡ {monto_v:,.2f} con fecha {fecha_pago_var_str} registrado con éxito!")
                     st.rerun()
                 else:
                     st.error("Por favor ingrese un monto válido mayor a cero.")
@@ -109,13 +126,24 @@ def run():
     st.markdown("---")
     st.markdown("###### 📋 Registro Consolidado de Egresos (2026)")
 
-    # Mostrar tabla unificada de obligaciones y gastos variables
+    # Consulta y despliegue de registros ordenados por fecha de pago
     conn = sqlite3.connect(db_path)
-    df_registros = pd.read_sql_query("SELECT id, mes, tienda, tipo_gasto, categoria, descripcion, monto FROM obligaciones WHERE anio = 2026", conn)
+    df_registros = pd.read_sql_query(
+        "SELECT id, fecha_pago as 'Fecha Pago', mes as Mes, tienda as Tienda, tipo_gasto as Tipo, categoria as Categoria, descripcion as Descripcion, monto as Monto FROM obligaciones WHERE anio = 2026 ORDER BY fecha_pago DESC", 
+        conn
+    )
     conn.close()
 
     if not df_registros.empty:
-        st.dataframe(df_registros, use_container_width=True)
+        st.dataframe(
+            df_registros,
+            column_config={
+                "Monto": st.column_config.NumberColumn("Monto (₡)", format="₡ %,.2f"),
+                "Fecha Pago": st.column_config.DateColumn("Fecha Correspondiente", format="YYYY-MM-DD")
+            },
+            use_container_width=True,
+            hide_index=True
+        )
         
         st.markdown("---")
         c_del1, c_del2 = st.columns([2, 1])
@@ -133,4 +161,4 @@ def run():
                     st.success(f"Registro con ID {id_a_borrar} eliminado correctamente.")
                     st.rerun()
     else:
-        st.info("Aún no hay egresos registrados en la base de datos para 2026. Utiliza los formularios superiores para registrar tus gastos fijos y variables por tienda.")
+        st.info("Aún no hay egresos registrados en la base de datos para 2026. Utiliza los formularios superiores para programar tus pagos con fechas exactas.")
