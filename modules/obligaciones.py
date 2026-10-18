@@ -8,18 +8,30 @@ def inicializar_bd():
     os.makedirs("data", exist_ok=True)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+    
+    # Crear tabla base si no existe
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS obligaciones (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             anio INTEGER,
             mes TEXT,
-            tienda TEXT,
-            tipo_gasto TEXT,
             categoria TEXT,
             descripcion TEXT,
             monto REAL
         )
     ''')
+    
+    # Agregar automáticamente las nuevas columnas si la tabla ya existía con estructura vieja
+    try:
+        cursor.execute("ALTER TABLE obligaciones ADD COLUMN tienda TEXT DEFAULT 'Consolidado (Ambas Tiendas)'")
+    except Exception:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE obligaciones ADD COLUMN tipo_gasto TEXT DEFAULT 'Fijo'")
+    except Exception:
+        pass
+
     conn.commit()
     conn.close()
 
@@ -105,7 +117,6 @@ def run():
     if not df_registros.empty:
         st.dataframe(df_registros, use_container_width=True)
         
-        # Opción para borrar registros si fuera necesario
         st.markdown("---")
         c_del1, c_del2 = st.columns([2, 1])
         with c_del1:
