@@ -40,11 +40,11 @@ def init_db():
     """)
     conn.commit()
 
-    # Limpiamos cargas históricas previas para recargar los datos corregidos al centavo
+    # Limpiamos las precargas antiguas para dejar solo del 1 al 15
     cursor.execute("DELETE FROM cierres WHERE cajero = 'Histórico Simplifica2'")
     conn.commit()
 
-    # 1. Histórico exacto para Bravca Souvenir (Total: ₡1,060,970.00)
+    # 1. Histórico exacto del 1 al 15 para Bravca Souvenir
     historico_souvenir = [
         ("2026-10-01 18:00:00", "Bravca Souvenir", 31900.00),
         ("2026-10-02 18:00:00", "Bravca Souvenir", 6000.00),
@@ -61,10 +61,9 @@ def init_db():
         ("2026-10-13 18:00:00", "Bravca Souvenir", 75100.00),
         ("2026-10-14 18:00:00", "Bravca Souvenir", 104400.00),
         ("2026-10-15 18:00:00", "Bravca Souvenir", 28200.00),
-        ("2026-10-16 18:00:00", "Bravca Souvenir", 42500.00),
     ]
 
-    # 2. Histórico exacto para Bravca Extremo (Total: ₡333,425.00)
+    # 2. Histórico exacto del 1 al 15 para Bravca Extremo
     historico_extremo = [
         ("2026-10-01 18:00:00", "Bravca Extremo", 24120.00),
         ("2026-10-02 18:00:00", "Bravca Extremo", 9050.00),
@@ -81,7 +80,6 @@ def init_db():
         ("2026-10-13 18:00:00", "Bravca Extremo", 49710.00),
         ("2026-10-14 18:00:00", "Bravca Extremo", 3500.00),
         ("2026-10-15 18:00:00", "Bravca Extremo", 10600.00),
-        ("2026-10-16 18:00:00", "Bravca Extremo", 1500.00),
     ]
 
     for fecha_str, negocio_str, monto in historico_souvenir + historico_extremo:
@@ -196,7 +194,7 @@ def sincronizar_cierres_gmail():
 
         mail.logout()
         conn.close()
-        return True, "¡Sincronización completada! Todos los montos de ambas tiendas cuadran exactamente con Simplifica2."
+        return True, "Sincronización completa. Fechas corregidas y montos alineados con Simplifica2."
 
     except Exception as e:
         conn.close()
