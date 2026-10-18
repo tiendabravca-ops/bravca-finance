@@ -57,6 +57,25 @@ st.markdown("""
         color: #F5A623 !important;
     }
 
+    /* Estilo elegante para el expander del logo (efecto tarjeta flotante) */
+    [data-testid="stSidebar"] div[data-testid="stExpander"] {
+        background-color: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 4px;
+        margin-bottom: 20px;
+        transition: all 0.2s ease;
+    }
+    [data-testid="stSidebar"] div[data-testid="stExpander"]:hover {
+        border-color: #F5A623;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+    [data-testid="stSidebar"] div[data-testid="stExpander"] summary p {
+        font-size: 0.8rem !important;
+        color: #F5A623 !important;
+        font-weight: 700 !important;
+    }
+
     /* 4. Tarjetas KPIs tipo Clean Card con sombra flotante */
     .brabca-card {
         background-color: #FFFFFF !important;
@@ -162,23 +181,26 @@ database.init_db()
 database.cargar_ventas_octubre_simplifica2()
 database.auto_generar_gastos_fijos()
 
-# --- SECCIÓN DEL LOGO OCULTO / INTERACTIVO EN BARRA LATERAL ---
-# Mostrar logo
-if os.path.exists("logo.png"):
-    st.sidebar.image("logo.png", use_container_width=True)
-elif os.path.exists("logo.jpg"):
-    st.sidebar.image("logo.jpg", use_container_width=True)
-
-# Interruptor discreto: sólo si haces clic en la casilla se despliega el uploader
-editar_logo = st.sidebar.checkbox("⚙️ Cambiar imagen de logo", value=False, key="toggle_edit_logo")
-
-if editar_logo:
-    uploaded_logo = st.sidebar.file_uploader("Sube el nuevo logo (PNG/JPG)", type=["png", "jpg", "jpeg"], key="uploader_oculto")
+# --- SECCIÓN DE LOGO INTERACTIVO EN BARRA LATERAL ---
+with st.sidebar.expander("🖼️ [ Click para cambiar Logo ]", expanded=False):
+    if os.path.exists("logo.png"):
+        st.image("logo.png", use_container_width=True)
+    elif os.path.exists("logo.jpg"):
+        st.image("logo.jpg", use_container_width=True)
+        
+    uploaded_logo = st.file_uploader("Sube nueva imagen (PNG/JPG)", type=["png", "jpg", "jpeg"], key="uploader_tarjeta")
     if uploaded_logo is not None:
         image = Image.open(uploaded_logo)
         image.save("logo.png")
-        st.sidebar.success("¡Logo actualizado!")
+        st.success("¡Logo actualizado con éxito!")
         st.rerun()
+
+# Si el expander está cerrado, mostramos el logo de forma limpia y directa arriba del menú
+if not st.session_state.get("stSidebar_expander", False): # Estándar visual limpio
+    if os.path.exists("logo.png"):
+        st.sidebar.image("logo.png", use_container_width=True)
+    elif os.path.exists("logo.jpg"):
+        st.sidebar.image("logo.jpg", use_container_width=True)
 
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 st.sidebar.markdown("### **Menú Principal**")
