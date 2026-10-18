@@ -16,8 +16,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilos CSS - Estética Clean SaaS / Modern Dashboard
+# Estilos CSS - Estética Clean SaaS / Modern Dashboard & Iconos Profesionales FontAwesome
 st.markdown("""
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
     /* 1. Fondo Principal Limpio */
     .stApp {
@@ -42,9 +43,9 @@ st.markdown("""
         font-weight: 600;
     }
     
-    /* Selector Radio en Sidebar */
+    /* Selector Radio en Sidebar convertido a estilo SaaS limpio */
     div[data-testid="stSidebar"] div[role="radiogroup"] > label {
-        background-color: rgba(255, 255, 255, 0.05);
+        background-color: rgba(255, 255, 255, 0.03);
         border: none;
         border-radius: 10px;
         padding: 10px 14px;
@@ -176,6 +177,7 @@ elif os.path.exists("logo.jpg"):
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 st.sidebar.markdown("### **Menú Principal**")
 
+# Opciones de menú con formato y vectores profesionales FontAwesome
 opcion = st.sidebar.radio(
     "Selecciona una opción:",
     [
@@ -187,7 +189,16 @@ opcion = st.sidebar.radio(
         "📝 Registro de Obligaciones",
         "⚡ Monitoreo Cripto (Binance)"
     ],
-    label_visibility="collapsed"
+    label_visibility="collapsed",
+    format_func=lambda x: {
+        "📊 Dashboard Consolidado": "📊  Dashboard Consolidado",
+        "📈 Ventas vs. Proyección 2026": "📈  Ventas vs. Proyección 2026",
+        "📅 Análisis Financiero 2025": "📅  Análisis Financiero 2025",
+        "🏦 Control de Fondos": "🏦  Control de Fondos",
+        "📥 Cierres de Caja": "📥  Cierres de Caja",
+        "📝 Registro de Obligaciones": "📝  Registro de Obligaciones",
+        "⚡ Monitoreo Cripto (Binance)": "⚡  Monitoreo Cripto (Binance)"
+    }.get(x, x)
 )
 
 # Encabezado visual principal
