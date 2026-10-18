@@ -25,8 +25,11 @@ def get_gmail_credentials():
 def init_db():
     conn = sqlite3.connect("db_cierres.db")
     cursor = conn.cursor()
+    
+    # Recrear la tabla completamente limpia para evitar duplicados o basura acumulada
+    cursor.execute("DROP TABLE IF EXISTS cierres")
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS cierres (
+        CREATE TABLE cierres (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             fecha TEXT,
             cajero TEXT,
@@ -40,7 +43,7 @@ def init_db():
     """)
     conn.commit()
 
-    # Cargar histórico del 1 al 15 de Octubre si aún no existe
+    # Cargar histórico exacto del 1 al 15 de Octubre
     historico_octubre = [
         # --- Bravca Souvenir ---
         ("2026-10-01", "Bravca Souvenir", 31900.00),
@@ -77,13 +80,11 @@ def init_db():
     ]
 
     for fecha_str, negocio_str, monto in historico_octubre:
-        cursor.execute("SELECT id FROM cierres WHERE fecha LIKE ? AND negocio = ?", (f"{fecha_str}%", negocio_str))
-        if not cursor.fetchone():
-            cursor.execute("""
-                INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
-                VALUES (?, ?, ?, ?, 0.0, 0.0, ?, ?)
-            """, (f"{fecha_str} 18:00", "Histórico Simplifica2", negocio_str, monto, monto, "Histórico Cargado"))
-            conn.commit()
+        cursor.execute("""
+            INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
+            VALUES (?, ?, ?, ?, 0.0, 0.0, ?, ?)
+        """, (f"{fecha_str} 18:00", "Histórico Simplifica2", negocio_str, monto, monto, "Histórico Cargado"))
+        conn.commit()
 
     conn.close()
 
@@ -92,7 +93,7 @@ def sincronizar_cierres_gmail():
     if not password:
         return False, "Falta configurar la contraseña de aplicación en los 'Secrets' de Streamlit Cloud."
 
-    init_db()
+    init_db()  # Limpia y carga el histórico limpio
     conn = sqlite3.connect("db_cierres.db")
     cursor = conn.cursor()
 
@@ -175,28 +176,21 @@ def sincronizar_cierres_gmail():
                         dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.\d{2})", full_content)
                         dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 0.0
 
-                        # Guardar o actualizar
-                        cursor.execute("SELECT id FROM cierres WHERE fecha = ? AND cajero = ?", (fecha, cajero))
+                        # Evitar duplicar el día 16 si ya se insertó en esta pasada
+                        cursor.execute("SELECT id FROM cierres WHERE fecha = ? AND negocio = ?", (fecha, negocio))
                         row = cursor.fetchone()
                         
-                        if row:
-                            cursor.execute("""
-                                UPDATE cierres 
-                                SET negocio = ?, colones = ?, dolares = ?, tarjeta_colones = ?, efectivo_colones = ?, estado = ?
-                                WHERE id = ?
-                            """, (negocio, colones, dolares, tarjeta_colones, efectivo_colones, "Recibido / Verificado", row[0]))
-                        else:
+                        if not row:
                             cursor.execute("""
                                 INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                             """, (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, "Recibido / Verificado"))
-                        
-                        conn.commit()
-                        registros_procesados += 1
+                            conn.commit()
+                            registros_procesados += 1
 
         mail.logout()
         conn.close()
-        return True, "Sincronización completa con tu código original recuperado."
+        return True, "Base de datos sincronizada y limpia sin duplicados."
 
     except Exception as e:
         conn.close()
