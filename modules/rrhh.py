@@ -3,11 +3,41 @@ import pandas as pd
 import sqlite3
 from datetime import datetime
 
+def crear_tablas_rrhh_si_no_existen(conn):
+    """Garantiza la existencia de las tablas de RRHH en la base de datos"""
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS colaboradores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            tienda TEXT NOT NULL,
+            puesto TEXT NOT NULL,
+            salario_base REAL NOT NULL,
+            fecha_ingreso TEXT NOT NULL,
+            estado TEXT DEFAULT 'Activo'
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS movimientos_rrhh (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            colaborador_id INTEGER,
+            tipo TEXT NOT NULL,
+            monto REAL NOT NULL,
+            fecha TEXT NOT NULL,
+            nota TEXT,
+            FOREIGN KEY (colaborador_id) REFERENCES colaboradores (id)
+        )
+    ''')
+    conn.commit()
+
 def run():
     st.markdown('<div class="brand-title">Gestión de Recursos Humanos</div>', unsafe_allow_html=True)
     st.markdown('<div class="brand-sub">CONTROL DE PERSONAL, PLANILLA Y ADELANTOS • BRÁVCA</div>', unsafe_allow_html=True)
 
     conn = sqlite3.connect('bravca.db')
+    
+    # Crear tablas automáticamente si aún no existen
+    crear_tablas_rrhh_si_no_existen(conn)
 
     tab1, tab2, tab3 = st.tabs(["👥 Colaboradores", "💸 Adelantos y Planilla", "📊 Resumen de Costos"])
 
