@@ -3,15 +3,15 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime
 
-def obtener_ventas_reales_desde_db():
-    """Consulta la base de datos de cierres para extraer los totales reales agrupados por mes y tienda."""
+def obtener_ventas_reales_desde_db(se_base_2026, me_base_2026):
+    """Toma las ventas reales base de 2026 y sobreescribe únicamente los meses que ya tienen cierres en la base de datos (ej. Octubre)."""
     conn = sqlite3.connect("db_cierres.db")
     query = "SELECT fecha, negocio, colones FROM cierres"
     df_db = pd.read_sql_query(query, conn)
     conn.close()
 
-    se_dict = {m: 0.0 for m in ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']}
-    me_dict = {m: 0.0 for m in ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']}
+    se_dict = se_base_2026.copy()
+    me_dict = me_base_2026.copy()
     
     mapping_meses = {
         '01': 'enero', '02': 'febrero', '03': 'marzo', '04': 'abril',
@@ -19,12 +19,15 @@ def obtener_ventas_reales_desde_db():
         '09': 'septiembre', '10': 'octubre', '11': 'noviembre', '12': 'diciembre'
     }
 
+    # Acumuladores temporales para octubre en adelante leídos de la BD
+    db_se_oct = 0.0
+    db_me_oct = 0.0
+
     if not df_db.empty:
         df_db['fecha_dt'] = pd.to_datetime(df_db['fecha'], errors='coerce')
         df_db['mes_num'] = df_db['fecha_dt'].dt.strftime('%m')
         df_db['anio'] = df_db['fecha_dt'].dt.strftime('%Y')
         
-        # Filtramos estrictamente el año 2026
         df_2026 = df_db[df_db['anio'] == '2026']
 
         for _, row in df_2026.iterrows():
@@ -34,16 +37,21 @@ def obtener_ventas_reales_desde_db():
                 tienda = str(row['negocio']).strip().lower()
                 monto = float(row['colones']) if pd.notnull(row['colones']) else 0.0
 
-                # Bravca Souvenir = Santa Elena | Bravca Extremo = Monteverde Extremo
-                if 'souvenir' in tienda or 'santa elena' in tienda:
-                    se_dict[nombre_mes] += monto
-                elif 'extremo' in tienda:
-                    me_dict[nombre_mes] += monto
+                if nombre_mes == 'octubre':
+                    if 'souvenir' in tienda or 'santa elena' in tienda:
+                        db_se_oct += monto
+                    elif 'extremo' in tienda:
+                        db_me_oct += monto
+
+    # Si hay registros en la BD para octubre, actualizamos el mes de octubre con el real de los cierres
+    if db_se_oct > 0:
+        se_dict['octubre'] = db_se_oct
+    if db_me_oct > 0:
+        me_dict['octubre'] = db_me_oct
 
     return se_dict, me_dict
 
 def run():
-    # Estilos CSS originales recuperados para las tarjetas corporativas
     st.markdown("""
         <style>
             .brabca-card {
@@ -138,8 +146,12 @@ def run():
     se_2025 = {'enero': 5609058.0, 'febrero': 5858674.0, 'marzo': 6563325.0, 'abril': 5030208.0, 'mayo': 3051706.0, 'junio': 4533249.0, 'julio': 6181795.0, 'agosto': 5707678.0, 'septiembre': 2240840.0, 'octubre': 2068705.0, 'noviembre': 4995976.0, 'diciembre': 6451352.0}
     me_2025 = {'enero': 3996723.0, 'febrero': 3849065.0, 'marzo': 3948468.0, 'abril': 3902629.0, 'mayo': 2604663.0, 'junio': 3305065.0, 'julio': 5166749.0, 'agosto': 4805683.0, 'septiembre': 2902578.0, 'octubre': 2914149.0, 'noviembre': 4123608.0, 'diciembre': 5747824.0}
 
-    # Ventas 2026 conectadas automáticamente a la base de datos de cierres reales
-    se_2026, me_2026 = obtener_ventas_reales_desde_db()
+    # Base original de ventas 2026 para conservar enero a septiembre
+    se_2026_base = {'enero': 6505637.0, 'febrero': 6428153.0, 'marzo': 6568137.0, 'abril': 3404128.0, 'mayo': 2436870.0, 'junio': 2492625.0, 'julio': 3659071.0, 'agosto': 4591962.0, 'septiembre': 2076047.0, 'octubre': 0.0, 'noviembre': 0.0, 'diciembre': 0.0}
+    me_2026_base = {'enero': 5217268.0, 'febrero': 3745984.0, 'marzo': 4792605.0, 'abril': 3885728.0, 'mayo': 3427314.0, 'junio': 2571164.0, 'julio': 4780260.0, 'agosto': 4339610.0, 'septiembre': 1287905.0, 'octubre': 0.0, 'noviembre': 0.0, 'diciembre': 0.0}
+
+    # Mezclamos el histórico anterior con los cierres reales de octubre desde la BD
+    se_2026, me_2026 = obtener_ventas_reales_desde_db(se_2026_base, me_2026_base)
 
     idx_start = orden_meses.index(mes_inicio)
     idx_end = orden_meses.index(mes_fin)
@@ -188,7 +200,6 @@ def run():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Tarjetas de totales con diseño corporativo
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         st.markdown(f'''
@@ -226,7 +237,6 @@ def run():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Tabla Desglosada
     st.dataframe(
         df[['mes', 'Base 2025 (₡)', 'Meta Proyectada (₡)', 'Venta Real 2026 (₡)', 'brecha', 'pct_cumplimiento']],
         column_config={
