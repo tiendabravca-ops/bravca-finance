@@ -39,6 +39,30 @@ def inicializar_bd():
     conn.commit()
     conn.close()
 
+def mapear_icono_categoria(cat):
+    """Agrega badges visuales a las categorías para distinguirlas claramente."""
+    cat_str = str(cat)
+    if "Planilla" in cat_str or "Salario" in cat_str:
+        return "💼 " + cat_str
+    elif "Alquiler" in cat_str:
+        return "🏢 " + cat_str
+    elif "Impuesto" in cat_str or "Patente" in cat_str:
+        return "🏛️ " + cat_str
+    elif "Contabilidad" in cat_str or "Profesionales" in cat_str:
+        return "📊 " + cat_str
+    elif "Servicios" in cat_str:
+        return "💡 " + cat_str
+    elif "Préstamo" in cat_str or "Financiamiento" in cat_str:
+        return "🏦 " + cat_str
+    elif "Mercadería" in cat_str or "Proveedor" in cat_str:
+        return "📦 " + cat_str
+    elif "Mantenimiento" in cat_str or "Reparaciones" in cat_str:
+        return "🛠️ " + cat_str
+    elif "Insumos" in cat_str:
+        return "🏷️ " + cat_str
+    else:
+        return "📌 " + cat_str
+
 def run():
     st.markdown("##### 📑 CONTROL DE OBLIGACIONES, GASTOS FIJOS Y VARIABLES")
     inicializar_bd()
@@ -196,13 +220,20 @@ def run():
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Mostrar Tabla de Resultados
+        # Aplicar formato de categorías e íconos para la vista
+        df_filtrado['Categoria_Display'] = df_filtrado['Categoria'].apply(mapear_icono_categoria)
+        df_filtrado['Tipo_Display'] = df_filtrado['Tipo'].apply(lambda x: "🔴 Fijo" if x == "Fijo" else "⚡ Variable")
+
+        # Configuración visual de columnas en la tabla
         st.dataframe(
-            df_filtrado,
+            df_filtrado[['id', 'Fecha Pago', 'Periodicidad', 'Mes', 'Tienda', 'Tipo_Display', 'Categoria_Display', 'Descripcion', 'Monto']],
             column_config={
+                "id": st.column_config.NumberColumn("ID", format="%d"),
                 "Monto": st.column_config.NumberColumn("Monto (₡)", format="₡ %,.2f"),
                 "Fecha Pago": st.column_config.DateColumn("Fecha Correspondiente", format="YYYY-MM-DD"),
-                "Periodicidad": st.column_config.TextColumn("Frecuencia")
+                "Periodicidad": st.column_config.TextColumn("Frecuencia"),
+                "Tipo_Display": st.column_config.TextColumn("Tipo Gasto"),
+                "Categoria_Display": st.column_config.TextColumn("Categoría")
             },
             use_container_width=True,
             hide_index=True
