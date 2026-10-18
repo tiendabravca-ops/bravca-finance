@@ -5,7 +5,7 @@ import sqlite3
 import os
 
 def obtener_ventas_reales_desde_db(se_base_2026, me_base_2026):
-    """Consulta la base de datos de cierres para actualizar las ventas reales (ej. Octubre en adelante)."""
+    """Suma directamente los colones de la BD agrupados por mes extrayendo la fecha como texto de forma segura."""
     db_path = "db_cierres.db"
     se_dict = se_base_2026.copy()
     me_dict = me_base_2026.copy()
@@ -26,34 +26,27 @@ def obtener_ventas_reales_desde_db(se_base_2026, me_base_2026):
         }
 
         if not df_db.empty:
-            df_db['fecha_dt'] = pd.to_datetime(df_db['fecha'], errors='coerce')
-            df_db['mes_num'] = df_db['fecha_dt'].dt.strftime('%m')
-            df_db['anio'] = df_db['fecha_dt'].dt.strftime('%Y')
+            df_db['fecha_clean'] = df_db['fecha'].astype(str).str.strip()
+            df_db['anio'] = df_db['fecha_clean'].str.slice(0, 4)
+            df_db['mes_num'] = df_db['fecha_clean'].str.slice(5, 7)
             
+            # Filtrar únicamente los registros del año 2026
             df_2026 = df_db[df_db['anio'] == '2026']
 
-            # Acumuladores por mes para la BD
-            db_se_mes = {m: 0.0 for m in mapping_meses.values()}
-            db_me_mes = {m: 0.0 for m in mapping_meses.values()}
-
-            for _, row in df_2026.iterrows():
-                m_num = row['mes_num']
+            meses_con_datos = df_2026['mes_num'].dropna().unique()
+            for m_num in meses_con_datos:
                 if m_num in mapping_meses:
                     nombre_mes = mapping_meses[m_num]
-                    tienda = str(row['negocio']).strip().lower()
-                    monto = float(row['colones']) if pd.notnull(row['colones']) else 0.0
+                    df_mes = df_2026[df_2026['mes_num'] == m_num]
+                    
+                    # Clasificación flexible por nombre de tienda
+                    suma_se = df_mes[~df_mes['negocio'].str.lower().str.contains('extremo|monteverde', na=False)]['colones'].sum()
+                    suma_me = df_mes[df_mes['negocio'].str.lower().str.contains('extremo|monteverde', na=False)]['colones'].sum()
 
-                    if 'souvenir' in tienda or 'santa elena' in tienda:
-                        db_se_mes[nombre_mes] += monto
-                    elif 'extremo' in tienda:
-                        db_me_mes[nombre_mes] += monto
-
-            # Sobrescribimos en los diccionarios 2026 los meses que tengan registros en la BD (ej. octubre)
-            for m in mapping_meses.values():
-                if db_se_mes[m] > 0:
-                    se_dict[m] = db_se_mes[m]
-                if db_me_mes[m] > 0:
-                    me_dict[m] = db_me_mes[m]
+                    if suma_se > 0:
+                        se_dict[nombre_mes] = float(suma_se)
+                    if suma_me > 0:
+                        me_dict[nombre_mes] = float(suma_me)
     except Exception:
         pass
 
@@ -111,8 +104,6 @@ def run():
         )
 
     orden_meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-    # Actualizamos los meses activos para incluir octubre (ya que tenemos datos reales sincronizados)
-    meses_activos = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre']
 
     # Bases Reales 2025
     se_2025 = {'enero': 5609058.0, 'febrero': 5858674.0, 'marzo': 6563325.0, 'abril': 5030208.0, 'mayo': 3051706.0, 'junio': 4533249.0, 'julio': 6181795.0, 'agosto': 5707678.0, 'septiembre': 2240840.0, 'octubre': 2068705.0, 'noviembre': 4995976.0, 'diciembre': 6451352.0}
@@ -122,8 +113,11 @@ def run():
     se_2026_base = {'enero': 6505637.0, 'febrero': 6428153.0, 'marzo': 6568137.0, 'abril': 3404128.0, 'mayo': 2436870.0, 'junio': 2492625.0, 'julio': 3659071.0, 'agosto': 4591962.0, 'septiembre': 2076047.0, 'octubre': 0.0, 'noviembre': 0.0, 'diciembre': 0.0}
     me_2026_base = {'enero': 5217268.0, 'febrero': 3745984.0, 'marzo': 4792605.0, 'abril': 3885728.0, 'mayo': 3427314.0, 'junio': 2571164.0, 'julio': 4780260.0, 'agosto': 4339610.0, 'septiembre': 1287905.0, 'octubre': 0.0, 'noviembre': 0.0, 'diciembre': 0.0}
 
-    # Integramos la base de datos de cierres para actualizar octubre automáticamente
+    # Integramos la base de datos de cierres para actualizar dinámicamente cualquier mes con registros
     se_2026, me_2026 = obtener_ventas_reales_desde_db(se_2026_base, me_2026_base)
+
+    # Determinamos de forma dinámica los meses activos que ya tienen ventas reales registradas (> 0)
+    meses_activos = [m for m in orden_meses if (se_2026[m] > 0 or me_2026[m] > 0)]
 
     # Obligaciones desde base de datos / archivo
     obligaciones_2026 = obtener_obligaciones_db()
@@ -149,7 +143,7 @@ def run():
         brecha = v26 - meta
         pct = (v26 / meta * 100) if meta > 0 else 0.0
 
-        if m in meses_activos:
+        if m in meses_activos and v26 > 0:
             if pct < 85.0:
                 alertas_rojas.append(f"**{m.capitalize()}**: Cumplimiento del **{pct:.1f}%** (Déficit vs. Meta: ₡ {abs(brecha):,.2f})")
             elif pct >= 100.0:
@@ -171,6 +165,9 @@ def run():
     tot_meta = df_activos['Meta 2026'].sum()
     brecha_global = tot_real - tot_meta
     pct_global = (tot_real / tot_meta * 100) if tot_meta > 0 else 0.0
+
+    # Texto dinámico del período activo
+    texto_periodo = f"{meses_activos[0].capitalize()} - {meses_activos[-1].capitalize()}" if meses_activos else "2026"
 
     # ALERTAS Y DIAGNÓSTICO
     st.markdown("###### 🚨 ALERTAS Y DIAGNÓSTICO FINANCIERO AUTOMÁTICO")
@@ -198,14 +195,14 @@ def run():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # TARJETAS DE KPIS PRINCIPALES (Actualizadas a Ene - Oct)
+    # TARJETAS DE KPIS PRINCIPALES
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(f'''
             <div class="brabca-card">
                 <div class="card-label">VENTA ACUMULADA 2026</div>
                 <div class="card-value">₡ {tot_real:,.2f}</div>
-                <small style="color: #6E7C77;">{tienda_filtro} (Ene - Oct)</small>
+                <small style="color: #6E7C77;">{tienda_filtro} ({texto_periodo})</small>
             </div>
         ''', unsafe_allow_html=True)
     with k2:
@@ -230,7 +227,7 @@ def run():
             <div class="brabca-card">
                 <div class="card-label">% CUMPLIMIENTO GLOBAL</div>
                 <div class="card-value">{pct_global:.2f}%</div>
-                <small style="color: #6E7C77;">Ene - Oct 2026</small>
+                <small style="color: #6E7C77;">{texto_periodo} 2026</small>
             </div>
         ''', unsafe_allow_html=True)
 
