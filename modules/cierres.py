@@ -65,7 +65,7 @@ def run():
         df_cierres = cargar_datos_cierres()
         
         if not df_cierres.empty:
-            # Convertir fecha para permitir filtros por tramos/rangos
+            # Convertir fecha para permitir filtros por tramos/rangos de forma segura
             df_cierres['fecha_dt'] = pd.to_datetime(df_cierres['fecha'], errors='coerce').dt.date
 
             # --- CONTROLES DE FILTRADO ---
@@ -84,12 +84,15 @@ def run():
             if tienda_seleccionada != "Todas las tiendas":
                 df_filtrado = df_filtrado[df_filtrado['negocio'] == tienda_seleccionada]
 
-            # Aplicar filtro por rango de fechas
+            # Aplicar filtro por rango de fechas de forma segura
             if tipo_filtro_fecha == "Rango específico":
-                min_f = df_cierres['fecha_dt'].min()
-                max_f = df_cierres['fecha_dt'].max()
-                if pd.isna(min_f): min_f = datetime.now().date()
-                if pd.isna(max_f): max_f = datetime.now().date()
+                fechas_validas = df_cierres['fecha_dt'].dropna()
+                if not fechas_validas.empty:
+                    min_f = fechas_validas.min()
+                    max_f = fechas_validas.max()
+                else:
+                    min_f = datetime.now().date()
+                    max_f = datetime.now().date()
                 
                 rango_fechas = st.date_input(
                     "Selecciona el tramo de fechas:",
