@@ -4,7 +4,7 @@ import streamlit as st
 from datetime import datetime
 
 def obtener_ventas_reales_desde_db(se_base_2026, me_base_2026):
-    """Toma las ventas reales base de 2026 y sobreescribe únicamente los meses que ya tienen cierres en la base de datos (ej. Octubre)."""
+    """Toma las ventas base de 2026 y sobreescribe dinámicamente cualquier mes que tenga cierres registrados en la base de datos."""
     conn = sqlite3.connect("db_cierres.db")
     query = "SELECT fecha, negocio, colones FROM cierres"
     df_db = pd.read_sql_query(query, conn)
@@ -19,35 +19,35 @@ def obtener_ventas_reales_desde_db(se_base_2026, me_base_2026):
         '09': 'septiembre', '10': 'octubre', '11': 'noviembre', '12': 'diciembre'
     }
 
-    # Acumuladores temporales para octubre en adelante leídos de la BD
-    db_se_oct = 0.0
-    db_me_oct = 0.0
-
     if not df_db.empty:
         df_db['fecha_dt'] = pd.to_datetime(df_db['fecha'], errors='coerce')
         df_db['mes_num'] = df_db['fecha_dt'].dt.strftime('%m')
         df_db['anio'] = df_db['fecha_dt'].dt.strftime('%Y')
         
+        # Filtrar solo los registros del año 2026
         df_2026 = df_db[df_db['anio'] == '2026']
 
-        for _, row in df_2026.iterrows():
-            m_num = row['mes_num']
-            if m_num in mapping_meses:
-                nombre_mes = mapping_meses[m_num]
-                tienda = str(row['negocio']).strip().lower()
-                monto = float(row['colones']) if pd.notnull(row['colones']) else 0.0
+        # Agrupar dinámicamente por mes y negocio
+        for mes_num, grupo_mes in df_2026.groupby('mes_num'):
+            if mes_num in mapping_meses:
+                nombre_mes = mapping_meses[mes_num]
+                
+                suma_se = 0.0
+                suma_me = 0.0
+                
+                for _, row in grupo_mes.iterrows():
+                    tienda = str(row['negocio']).strip().lower()
+                    monto = float(row['colones']) if pd.notnull(row['colones']) else 0.0
+                    
+                    if 'extremo' in tienda or 'monteverde' in tienda:
+                        suma_me += monto
+                    else:
+                        suma_se += monto
 
-                if nombre_mes == 'octubre':
-                    if 'souvenir' in tienda or 'santa elena' in tienda:
-                        db_se_oct += monto
-                    elif 'extremo' in tienda:
-                        db_me_oct += monto
-
-    # Si hay registros en la BD para octubre, actualizamos el mes de octubre con el real de los cierres
-    if db_se_oct > 0:
-        se_dict['octubre'] = db_se_oct
-    if db_me_oct > 0:
-        me_dict['octubre'] = db_me_oct
+                if suma_se > 0:
+                    se_dict[nombre_mes] = suma_se
+                if suma_me > 0:
+                    me_dict[nombre_mes] = suma_me
 
     return se_dict, me_dict
 
@@ -150,7 +150,7 @@ def run():
     se_2026_base = {'enero': 6505637.0, 'febrero': 6428153.0, 'marzo': 6568137.0, 'abril': 3404128.0, 'mayo': 2436870.0, 'junio': 2492625.0, 'julio': 3659071.0, 'agosto': 4591962.0, 'septiembre': 2076047.0, 'octubre': 0.0, 'noviembre': 0.0, 'diciembre': 0.0}
     me_2026_base = {'enero': 5217268.0, 'febrero': 3745984.0, 'marzo': 4792605.0, 'abril': 3885728.0, 'mayo': 3427314.0, 'junio': 2571164.0, 'julio': 4780260.0, 'agosto': 4339610.0, 'septiembre': 1287905.0, 'octubre': 0.0, 'noviembre': 0.0, 'diciembre': 0.0}
 
-    # Mezclamos el histórico anterior con los cierres reales de octubre desde la BD
+    # Mezclamos el histórico anterior con los cierres reales desde la BD
     se_2026, me_2026 = obtener_ventas_reales_desde_db(se_2026_base, me_2026_base)
 
     idx_start = orden_meses.index(mes_inicio)
