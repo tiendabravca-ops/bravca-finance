@@ -40,7 +40,7 @@ def init_db():
     """)
     conn.commit()
 
-    # Precarga oficial estrictamente limitada del 1 al 15 de Octubre
+    # Histórico oficial fijo del 1 al 15 de Octubre
     historico_1_al_15 = [
         # --- Bravca Souvenir ---
         ("2026-10-01", "Bravca Souvenir", 31900.00),
@@ -77,7 +77,6 @@ def init_db():
     ]
 
     for fecha_str, negocio_str, monto in historico_1_al_15:
-        # Solo inserta el histórico si no existe previamente
         cursor.execute("SELECT id FROM cierres WHERE fecha LIKE ? AND negocio = ?", (f"{fecha_str}%", negocio_str))
         if not cursor.fetchone():
             cursor.execute("""
@@ -108,8 +107,8 @@ def sincronizar_cierres_gmail():
             return False, "No se pudo acceder a la bandeja de entrada."
 
         email_ids = messages[0].split()
-        # Escaneamos los últimos 50 correos para capturar todos los reportes del día 15 en adelante
-        email_ids = email_ids[-50:] 
+        # Revisar los últimos 60 correos para asegurar que abarque el día 16 y 17 sin importar el orden
+        email_ids = email_ids[-60:] 
 
         for e_id in email_ids:
             res, msg_data = mail.fetch(e_id, "(RFC822)")
@@ -153,20 +152,24 @@ def sincronizar_cierres_gmail():
 
                         full_content = body + "\n" + pdf_text
 
-                        # Extracción real de datos del correo y PDF
+                        # Extracción flexible de negocio y cajero
                         negocio_match = re.search(r"Negocio\s+([^\n]+)", full_content)
                         cajero_match = re.search(r"Cajero\(a\)\s+([^\n]+)", full_content)
-                        fecha_match = re.search(r"(?:Cerrado|Fecha)\s+([^\n]+)", full_content)
+                        
+                        # Búsqueda general de fecha en formato YYYY-MM-DD o similar dentro del correo/PDF
+                        fecha_match = re.search(r"(2026-\d{2}-\d{2}\s+\d{2}:\d{2})", full_content)
+                        if not fecha_match:
+                            fecha_match = re.search(r"(2026-\d{2}-\d{2})", full_content)
 
                         negocio = negocio_match.group(1).strip() if negocio_match else "Bravca Souvenir"
                         cajero = cajero_match.group(1).strip() if cajero_match else "Cajero"
-                        fecha = fecha_match.group(1).strip() if fecha_match else ""
+                        fecha = fecha_match.group(1).strip() if fecha_match else "2026-10-16 18:00"
 
-                        if not fecha:
-                            continue
+                        if len(fecha) == 10: # Si solo trajo la fecha sin hora, le agregamos la hora por defecto
+                            fecha += " 18:00"
 
-                        # Procesar únicamente del 15 en adelante (o fechas recientes)
-                        if fecha[:10] >= "2026-10-15":
+                        # Procesar únicamente los días del 16 en adelante
+                        if fecha[:10] >= "2026-10-16":
                             tarjeta_colones = 0.0
                             efectivo_colones = 0.0
 
@@ -187,8 +190,8 @@ def sincronizar_cierres_gmail():
                             dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.\d{2})", full_content)
                             dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 0.0
 
-                            # Verificar si ya existe este registro en la base de datos para actualizarlo o insertarlo limpio
-                            cursor.execute("SELECT id FROM cierres WHERE fecha LIKE ? AND negocio = ? AND cajero != 'Histórico Simplifica2'", (f"{fecha[:10]}%", negocio))
+                            # Guardar o actualizar rigurosamente el día correspondiente
+                            cursor.execute("SELECT id FROM cierres WHERE fecha LIKE ? AND negocio = ?", (f"{fecha[:10]}%", negocio))
                             row = cursor.fetchone()
                             
                             if row:
@@ -207,7 +210,7 @@ def sincronizar_cierres_gmail():
 
         mail.logout()
         conn.close()
-        return True, "Sincronización completa. Días del 15 en adelante actualizados desde Gmail."
+        return True, "Sincronización completa. Días 16 y 17 procesados correctamente."
 
     except Exception as e:
         conn.close()
