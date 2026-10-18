@@ -4,7 +4,7 @@ import streamlit as st
 from datetime import datetime
 
 def obtener_ventas_reales_desde_db(se_base_2026, me_base_2026):
-    """Suma directamente los colones de la BD agrupados por mes y sobreescribe las ventas reales."""
+    """Suma directamente los colones de la BD agrupados por mes extrayendo la fecha como texto de forma segura."""
     conn = sqlite3.connect("db_cierres.db")
     query = "SELECT fecha, negocio, colones FROM cierres"
     df_db = pd.read_sql_query(query, conn)
@@ -20,10 +20,12 @@ def obtener_ventas_reales_desde_db(se_base_2026, me_base_2026):
     }
 
     if not df_db.empty:
-        df_db['fecha_dt'] = pd.to_datetime(df_db['fecha'], errors='coerce')
-        df_db['mes_num'] = df_db['fecha_dt'].dt.strftime('%m')
-        df_db['anio'] = df_db['fecha_dt'].dt.strftime('%Y')
+        # Extraer YYYY y MM directamente de los primeros caracteres del texto de la fecha
+        df_db['fecha_clean'] = df_db['fecha'].astype(str).str.strip()
+        df_db['anio'] = df_db['fecha_clean'].str.slice(0, 4)
+        df_db['mes_num'] = df_db['fecha_clean'].str.slice(5, 7)
         
+        # Filtrar únicamente los registros del año 2026
         df_2026 = df_db[df_db['anio'] == '2026']
 
         meses_con_datos = df_2026['mes_num'].dropna().unique()
@@ -32,6 +34,7 @@ def obtener_ventas_reales_desde_db(se_base_2026, me_base_2026):
                 nombre_mes = mapping_meses[m_num]
                 df_mes = df_2026[df_2026['mes_num'] == m_num]
                 
+                # Clasificación flexible por nombre de tienda
                 suma_se = df_mes[~df_mes['negocio'].str.lower().str.contains('extremo|monteverde', na=False)]['colones'].sum()
                 suma_me = df_mes[df_mes['negocio'].str.lower().str.contains('extremo|monteverde', na=False)]['colones'].sum()
 
