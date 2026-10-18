@@ -6,7 +6,7 @@ from datetime import datetime
 from PIL import Image
 
 def crear_tablas_rrhh_si_no_existen(conn):
-    """Garantiza la existencia de las tablas de RRHH en la base de datos"""
+    """Garantiza la existencia de las tablas de RRHH y migra columnas si la tabla ya existía"""
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS colaboradores (
@@ -14,13 +14,25 @@ def crear_tablas_rrhh_si_no_existen(conn):
             nombre TEXT NOT NULL,
             tienda TEXT NOT NULL,
             puesto TEXT NOT NULL,
-            tipo_pago TEXT DEFAULT 'Salario Fijo Mensual', -- 'Salario Fijo Mensual' o 'Por Horas / Libres'
+            tipo_pago TEXT DEFAULT 'Salario Fijo Mensual',
             salario_base REAL DEFAULT 0,
             tarifa_hora REAL DEFAULT 0,
             fecha_ingreso TEXT NOT NULL,
             estado TEXT DEFAULT 'Activo'
         )
     ''')
+    
+    # Migración defensiva: Intentar agregar columnas si la tabla fue creada previamente
+    try:
+        cursor.execute("ALTER TABLE colaboradores ADD COLUMN tipo_pago TEXT DEFAULT 'Salario Fijo Mensual'")
+    except sqlite3.OperationalError:
+        pass  # La columna ya existe
+
+    try:
+        cursor.execute("ALTER TABLE colaboradores ADD COLUMN tarifa_hora REAL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # La columna ya existe
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS movimientos_rrhh (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,7 +92,7 @@ def run():
     ])
 
     # ---------------------------------------------------------
-    # TAB 1: COLABORADORES (CON OPCIÓN POR HORAS)
+    # TAB 1: COLABORADORES (SOPORTA SALARIO FIJO Y POR HORAS)
     # ---------------------------------------------------------
     with tab1:
         st.markdown("### Registro de Nuevo Colaborador")
@@ -123,7 +135,7 @@ def run():
             st.info("No hay colaboradores registrados todavía.")
 
     # ---------------------------------------------------------
-    # TAB 2: CÁLCULO DE PLANILLA NETO & CCSS (SOPORTA HORAS)
+    # TAB 2: CÁLCULO DE PLANILLA NETO & CCSS
     # ---------------------------------------------------------
     with tab2:
         st.markdown("### 🧮 Cálculo de Nómina Quincenal / Mensual con CCSS")
@@ -155,7 +167,6 @@ def run():
                     salario_periodo = emp['salario_base'] * factor_periodo
                     salario_bruto = salario_periodo + total_coberturas
                 else:
-                    # Pago por horas de fin de semana
                     salario_periodo = 0.0
                     salario_bruto = total_coberturas
 
@@ -172,7 +183,7 @@ def run():
                     "Modalidad": emp['tipo_pago'],
                     "Tienda": emp['tienda'],
                     f"Salario Base ({periodo.split(' ')[0]})": salario_periodo,
-                    "Horas Libres Trabaljadas": horas_totales,
+                    "Horas Libres Trabajadas": horas_totales,
                     "Pago por Horas/Extras (+)": total_coberturas,
                     "Salario Bruto": salario_bruto,
                     "CCSS Obrero (10.67%) (-)": ccss_obrero,
