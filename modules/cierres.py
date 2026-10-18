@@ -2,6 +2,7 @@ import sqlite3
 import pandas as pd
 import streamlit as st
 import email_reader
+from datetime import datetime
 
 def cargar_datos_cierres():
     conn = sqlite3.connect("db_cierres.db")
@@ -64,12 +65,53 @@ def run():
         df_cierres = cargar_datos_cierres()
         
         if not df_cierres.empty:
-            st.dataframe(df_cierres, use_container_width=True)
+            # Convertir fecha para permitir filtros por tramos/rangos
+            df_cierres['fecha_dt'] = pd.to_datetime(df_cierres['fecha'], errors='coerce').dt.date
+
+            # --- CONTROLES DE FILTRADO ---
+            col_f1, col_f2 = st.columns(2)
             
-            total_tarjeta = df_cierres['tarjeta_colones'].sum()
-            total_efectivo = df_cierres['efectivo_colones'].sum()
-            total_general = df_cierres['colones'].sum()
-            total_dolares = df_cierres['dolares'].sum()
+            with col_f1:
+                tiendas_disponibles = ["Todas las tiendas"] + list(df_cierres['negocio'].dropna().unique())
+                tienda_seleccionada = st.selectbox("🏬 Filtrar por Tienda:", tiendas_disponibles)
+
+            with col_f2:
+                tipo_filtro_fecha = st.radio("📅 Filtrar por Fechas:", ["Todo el histórico", "Rango específico"], horizontal=True)
+
+            df_filtrado = df_cierres.copy()
+
+            # Aplicar filtro por tienda
+            if tienda_seleccionada != "Todas las tiendas":
+                df_filtrado = df_filtrado[df_filtrado['negocio'] == tienda_seleccionada]
+
+            # Aplicar filtro por rango de fechas
+            if tipo_filtro_fecha == "Rango específico":
+                min_f = df_cierres['fecha_dt'].min()
+                max_f = df_cierres['fecha_dt'].max()
+                if pd.isna(min_f): min_f = datetime.now().date()
+                if pd.isna(max_f): max_f = datetime.now().date()
+                
+                rango_fechas = st.date_input(
+                    "Selecciona el tramo de fechas:",
+                    value=(min_f, max_f),
+                    min_value=min_f,
+                    max_value=max_f
+                )
+                
+                if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
+                    f_inicio, f_fin = rango_fechas
+                    df_filtrado = df_filtrado[(df_filtrado['fecha_dt'] >= f_inicio) & (df_filtrado['fecha_dt'] <= f_fin)]
+
+            # Limpiar columna temporal para la tabla visual
+            df_mostrar = df_filtrado.drop(columns=['fecha_dt'])
+
+            st.dataframe(df_mostrar, use_container_width=True)
+            
+            # Recalcular métricas en base a los datos filtrados
+            total_tarjeta = df_filtrado['tarjeta_colones'].sum()
+            total_efectivo = df_filtrado['efectivo_colones'].sum()
+            total_general = df_filtrado['colones'].sum()
+            total_dolares = df_filtrado['dolares'].sum()
             
             col1, col2, col3 = st.columns(3)
             with col1:
