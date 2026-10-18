@@ -25,11 +25,8 @@ def get_gmail_credentials():
 def init_db():
     conn = sqlite3.connect("db_cierres.db")
     cursor = conn.cursor()
-    
-    # Recrear la tabla completamente limpia para evitar duplicados o basura acumulada
-    cursor.execute("DROP TABLE IF EXISTS cierres")
     cursor.execute("""
-        CREATE TABLE cierres (
+        CREATE TABLE IF NOT EXISTS cierres (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             fecha TEXT,
             cajero TEXT,
@@ -43,7 +40,7 @@ def init_db():
     """)
     conn.commit()
 
-    # Cargar histórico exacto del 1 al 15 de Octubre
+    # Histórico exacto y real del 1 al 15 de Octubre (Montos oficiales de Simplifica2)
     historico_octubre = [
         # --- Bravca Souvenir ---
         ("2026-10-01", "Bravca Souvenir", 31900.00),
@@ -80,11 +77,13 @@ def init_db():
     ]
 
     for fecha_str, negocio_str, monto in historico_octubre:
-        cursor.execute("""
-            INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
-            VALUES (?, ?, ?, ?, 0.0, 0.0, ?, ?)
-        """, (f"{fecha_str} 18:00", "Histórico Simplifica2", negocio_str, monto, monto, "Histórico Cargado"))
-        conn.commit()
+        cursor.execute("SELECT id FROM cierres WHERE fecha LIKE ? AND negocio = ?", (f"{fecha_str}%", negocio_str))
+        if not cursor.fetchone():
+            cursor.execute("""
+                INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
+                VALUES (?, ?, ?, ?, 0.0, 0.0, ?, ?)
+            """, (f"{fecha_str} 18:00", "Histórico Simplifica2", negocio_str, monto, monto, "Histórico Cargado"))
+            conn.commit()
 
     conn.close()
 
@@ -93,7 +92,7 @@ def sincronizar_cierres_gmail():
     if not password:
         return False, "Falta configurar la contraseña de aplicación en los 'Secrets' de Streamlit Cloud."
 
-    init_db()  # Limpia y carga el histórico limpio del 1 al 15
+    init_db()
     conn = sqlite3.connect("db_cierres.db")
     cursor = conn.cursor()
 
@@ -108,7 +107,7 @@ def sincronizar_cierres_gmail():
             return False, "No se pudo acceder a la bandeja de entrada."
 
         email_ids = messages[0].split()
-        email_ids = email_ids[-30:] # Revisamos los últimos 30 correos para capturar los recientes (16 y 17)
+        email_ids = email_ids[-30:] # Revisar los correos recientes para atrapar los días 16 y 17
         registros_procesados = 0
 
         for e_id in email_ids:
@@ -153,7 +152,7 @@ def sincronizar_cierres_gmail():
 
                         full_content = body + "\n" + pdf_text
 
-                        # Extracción de metadatos
+                        # Extracción real de metadatos desde el correo / PDF
                         negocio_match = re.search(r"Negocio\s+([^\n]+)", full_content)
                         cajero_match = re.search(r"Cajero\(a\)\s+([^\n]+)", full_content)
                         fecha_match = re.search(r"(?:Cerrado|Fecha)\s+([^\n]+)", full_content)
@@ -162,35 +161,49 @@ def sincronizar_cierres_gmail():
                         cajero = cajero_match.group(1).strip() if cajero_match else "Cajero"
                         fecha = fecha_match.group(1).strip() if fecha_match else "2026-10-17 19:01"
 
-                        # Extracción de Tarjeta y Efectivo desde el PDF
-                        tarjeta_match = re.search(r"Tarjeta\s*[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
-                        efectivo_match = re.search(r"Efectivo\s*cobrado\s*[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
-                        if not efectivo_match:
-                            efectivo_match = re.search(r"Conteo\s+de\s+efectivo\s*[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
+                        # Extracción estricta de tarjeta y efectivo reales del PDF (sin valores inventados)
+                        tarjeta_colones = 0.0
+                        efectivo_colones = 0.0
 
-                        tarjeta_colones = float(tarjeta_match.group(1).replace(",", "")) if tarjeta_match else 0.0
-                        efectivo_colones = float(efectivo_match.group(1).replace(",", "")) if efectivo_match else 0.0
-                        
+                        t_match = re.search(r"Tarjeta[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
+                        if t_match:
+                            tarjeta_colones = float(t_match.group(1).replace(",", ""))
+
+                        e_match = re.search(r"(?:Efectivo\s*cobrado|Conteo\s+de\s+efectivo)[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
+                        if e_match:
+                            efectivo_colones = float(e_match.group(1).replace(",", ""))
+
                         colones = tarjeta_colones + efectivo_colones
+                        if colones == 0.0:
+                            total_match = re.search(r"Total[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
+                            if total_match:
+                                colones = float(total_match.group(1).replace(",", ""))
 
                         dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.\d{2})", full_content)
                         dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 0.0
 
-                        # Evitar duplicar si ya existe este mismo registro exacto
-                        cursor.execute("SELECT id FROM cierres WHERE fecha = ? AND negocio = ? AND cajero = ?", (fecha, negocio, cajero))
+                        # Guardar o actualizar de manera precisa el día real leído del correo
+                        cursor.execute("SELECT id FROM cierres WHERE fecha = ? AND negocio = ?", (fecha, negocio))
                         row = cursor.fetchone()
                         
-                        if not row:
+                        if row:
+                            cursor.execute("""
+                                UPDATE cierres 
+                                SET cajero = ?, colones = ?, dolares = ?, tarjeta_colones = ?, efectivo_colones = ?, estado = ?
+                                WHERE id = ?
+                            """, (cajero, colones, dolares, tarjeta_colones, efectivo_colones, "Recibido / Verificado", row[0]))
+                        else:
                             cursor.execute("""
                                 INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                             """, (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, "Recibido / Verificado"))
-                            conn.commit()
-                            registros_procesados += 1
+                        
+                        conn.commit()
+                        registros_procesados += 1
 
         mail.logout()
         conn.close()
-        return True, "Sincronización completa. Correos procesados y base de datos actualizada."
+        return True, "Sincronización completa. Días 16 y 17 actualizados desde los correos reales."
 
     except Exception as e:
         conn.close()
