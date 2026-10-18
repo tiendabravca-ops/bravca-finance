@@ -17,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilos CSS - Estética Clean SaaS / Modern Dashboard (Inspirado en panel corporativo)
+# Estilos CSS - Estética Clean SaaS / Modern Dashboard
 st.markdown("""
     <style>
     /* 1. Fondo Principal Limpio */
@@ -57,6 +57,16 @@ st.markdown("""
         color: #F5A623 !important;
     }
 
+    /* Ajuste para centrar y estilizar el logo en la barra lateral */
+    [data-testid="stSidebar"] [data-testid="stImage"] {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: 0 auto;
+        border-radius: 16px;
+        overflow: hidden;
+    }
+
     /* 4. Tarjetas KPIs tipo Clean Card con sombra flotante */
     .brabca-card {
         background-color: #FFFFFF !important;
@@ -94,7 +104,7 @@ st.markdown("""
     .card-value-gold {
         font-size: 2rem;
         font-weight: 800;
-        color: #F5A623 !important; /* Ámbar / Naranja Corporativo */
+        color: #F5A623 !important;
         letter-spacing: -0.5px;
     }
 
@@ -163,15 +173,17 @@ database.cargar_ventas_octubre_simplifica2()
 database.auto_generar_gastos_fijos()
 
 # --- SECCIÓN DEL LOGO & BARRA LATERAL ---
-# Visualización del logo en la barra lateral si existe
-if os.path.exists("logo.png"):
-    st.sidebar.image("logo.png", use_container_width=True)
-elif os.path.exists("logo.jpg"):
-    st.sidebar.image("logo.jpg", use_container_width=True)
+# Mostrar el logo contenido a 120px de ancho y centrado
+sb_col1, sb_col2, sb_col3 = st.sidebar.columns([1, 2, 1])
+with sb_col2:
+    if os.path.exists("logo.png"):
+        st.image("logo.png", width=120)
+    elif os.path.exists("logo.jpg"):
+        st.image("logo.jpg", width=120)
 
-st.sidebar.markdown("---")
+st.sidebar.markdown("<br>", unsafe_allow_html=True)
 
-# Opción desplegable en el sidebar para cargar/actualizar el logo fácilmente
+# Opción desplegable en el sidebar para cargar/actualizar el logo
 with st.sidebar.expander("🖼️ Cargar / Cambiar Logo"):
     uploaded_logo = st.file_uploader("Sube tu logo (PNG/JPG)", type=["png", "jpg", "jpeg"], key="uploader_logo")
     if uploaded_logo is not None:
@@ -199,9 +211,9 @@ opcion = st.sidebar.radio(
 col_logo, col_header = st.columns([1, 5])
 with col_logo:
     if os.path.exists("logo.png"):
-        st.image("logo.png", width=90)
+        st.image("logo.png", width=80)
     elif os.path.exists("logo.jpg"):
-        st.image("logo.jpg", width=90)
+        st.image("logo.jpg", width=80)
 
 with col_header:
     st.markdown('<div class="brand-title">bráˇca souvenir</div>', unsafe_allow_html=True)
