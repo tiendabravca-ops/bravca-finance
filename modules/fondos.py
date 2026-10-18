@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import plotly.express as px
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 
 def obtener_metas_desde_obligaciones(anio, mes_nombre):
@@ -157,16 +157,25 @@ def run():
         datos_ciclo = []
         if lista_obs:
             for obs in lista_obs:
-                f_pago = obs.get('fecha_pago')
-                if not f_pago:
-                    f_pago = f"{anio_curr}-{mes_num_curr:02d}-15"
+                f_pago_str = obs.get('fecha_pago')
+                if not f_pago_str:
+                    f_pago_str = f"{anio_curr}-{mes_num_curr:02d}-15"
                 
+                try:
+                    dt_inicio = datetime.strptime(f_pago_str, "%Y-%m-%d")
+                except Exception:
+                    dt_inicio = datetime(anio_curr, mes_num_curr, 15)
+
+                # Se define una duración de al menos 2 días para que la barra horizontal sea claramente visible en Gantt
+                dt_fin = dt_inicio + timedelta(days=2)
+                
+                desc = obs.get('descripcion') if obs.get('descripcion') else obs.get('categoria')
                 estado = "✅ Pagado" if obs.get('pagado') == 1 else "⏳ Pendiente"
                 
                 datos_ciclo.append({
-                    "Actividad": f"{obs['descripcion']} ({obs['tienda']})",
-                    "Inicio": f_pago,
-                    "Fin": f_pago,
+                    "Actividad": f"{desc} ({obs['tienda']})",
+                    "Inicio": dt_inicio.strftime("%Y-%m-%d"),
+                    "Fin": dt_fin.strftime("%Y-%m-%d"),
                     "Bloque": obs['categoria'],
                     "Monto": obs['monto'],
                     "Estado": estado
