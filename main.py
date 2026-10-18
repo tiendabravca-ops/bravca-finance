@@ -162,20 +162,23 @@ database.init_db()
 database.cargar_ventas_octubre_simplifica2()
 database.auto_generar_gastos_fijos()
 
-# --- SECCIÓN DEL LOGO Y CARGA EN BARRA LATERAL ---
-# Mostrar logo con el tamaño completo en el sidebar
+# --- SECCIÓN DEL LOGO OCULTO / INTERACTIVO EN BARRA LATERAL ---
+# Mostrar logo
 if os.path.exists("logo.png"):
     st.sidebar.image("logo.png", use_container_width=True)
 elif os.path.exists("logo.jpg"):
     st.sidebar.image("logo.jpg", use_container_width=True)
 
-# Subida directa de la imagen integrada en la barra lateral
-uploaded_logo = st.sidebar.file_uploader("🖼️ Cambiar Logo", type=["png", "jpg", "jpeg"], key="uploader_directo")
-if uploaded_logo is not None:
-    image = Image.open(uploaded_logo)
-    image.save("logo.png")
-    st.sidebar.success("¡Logo cargado!")
-    st.rerun()
+# Interruptor discreto: sólo si haces clic en la casilla se despliega el uploader
+editar_logo = st.sidebar.checkbox("⚙️ Cambiar imagen de logo", value=False, key="toggle_edit_logo")
+
+if editar_logo:
+    uploaded_logo = st.sidebar.file_uploader("Sube el nuevo logo (PNG/JPG)", type=["png", "jpg", "jpeg"], key="uploader_oculto")
+    if uploaded_logo is not None:
+        image = Image.open(uploaded_logo)
+        image.save("logo.png")
+        st.sidebar.success("¡Logo actualizado!")
+        st.rerun()
 
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 st.sidebar.markdown("### **Menú Principal**")
