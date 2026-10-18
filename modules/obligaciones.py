@@ -209,10 +209,64 @@ def run():
         )
         
         st.markdown("---")
-        c_del1, c_del2 = st.columns([2, 1])
-        with c_del1:
-            id_a_borrar = st.number_input("ID de registro a eliminar", min_value=0, step=1, value=0)
-        with c_del2:
+
+        # --- SECCIÓN DE EDICIÓN Y ELIMINACIÓN DE REGISTROS ---
+        e1, e2 = st.columns([1, 1])
+
+        with e1:
+            st.markdown("###### ✏️ Editar Registro Existente")
+            id_a_editar = st.number_input("ID de registro a editar", min_value=0, step=1, value=0, key="id_edit_input")
+
+            if id_a_editar > 0:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, tienda, tipo_gasto, categoria, descripcion, monto, fecha_pago, periodicidad FROM obligaciones WHERE id = ?", (id_a_editar,))
+                row_edit = cursor.fetchone()
+                conn.close()
+
+                if row_edit:
+                    _, curr_tienda, curr_tipo, curr_cat, curr_desc, curr_monto, curr_fecha, curr_period = row_edit
+                    
+                    try:
+                        fecha_val = datetime.strptime(curr_fecha, "%Y-%m-%d").date() if curr_fecha else datetime.now().date()
+                    except Exception:
+                        fecha_val = datetime.now().date()
+
+                    with st.form(f"form_edit_{id_a_editar}"):
+                        st.caption(f"Modificando Registro ID #{id_a_editar}")
+                        new_fecha = st.date_input("Fecha Correspondiente", value=fecha_val, key="edit_fecha")
+                        new_tienda = st.selectbox("Tienda", ["Consolidado (Ambas Tiendas)", "Santa Elena", "Monteverde Extremo"], index=["Consolidado (Ambas Tiendas)", "Santa Elena", "Monteverde Extremo"].index(curr_tienda) if curr_tienda in ["Consolidado (Ambas Tiendas)", "Santa Elena", "Monteverde Extremo"] else 0, key="edit_tienda")
+                        new_tipo = st.selectbox("Tipo de Gasto", ["Fijo", "Variable"], index=0 if curr_tipo == "Fijo" else 1, key="edit_tipo")
+                        new_cat = st.text_input("Categoría", value=curr_cat, key="edit_cat")
+                        new_period = st.selectbox("Periodicidad", ["Quincenal", "Mensual", "Trimestral (Q1 / Q2 / Q3 / Q4)", "Semestral", "Anual", "Pago Único"], index=["Quincenal", "Mensual", "Trimestral (Q1 / Q2 / Q3 / Q4)", "Semestral", "Anual", "Pago Único"].index(curr_period) if curr_period in ["Quincenal", "Mensual", "Trimestral (Q1 / Q2 / Q3 / Q4)", "Semestral", "Anual", "Pago Único"] else 1, key="edit_period")
+                        new_desc = st.text_input("Descripción / Proveedor", value=curr_desc, key="edit_desc")
+                        new_monto = st.number_input("Monto (₡)", min_value=0.0, value=float(curr_monto), step=5000.0, key="edit_monto")
+
+                        submitted_update = st.form_submit_button("🔄 Actualizar Registro", use_container_width=True)
+
+                        if submitted_update:
+                            new_anio = new_fecha.year
+                            new_mes = mapping_meses.get(new_fecha.month, 'enero')
+                            new_fecha_str = new_fecha.strftime("%Y-%m-%d")
+
+                            conn = sqlite3.connect(db_path)
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                UPDATE obligaciones 
+                                SET anio = ?, mes = ?, tienda = ?, tipo_gasto = ?, categoria = ?, descripcion = ?, monto = ?, fecha_pago = ?, periodicidad = ?
+                                WHERE id = ?
+                            """, (new_anio, new_mes, new_tienda, new_tipo, new_cat, new_desc, new_monto, new_fecha_str, new_period, id_a_editar))
+                            conn.commit()
+                            conn.close()
+
+                            st.success(f"¡Registro #{id_a_editar} actualizado correctamente!")
+                            st.rerun()
+                else:
+                    st.warning(f"No se encontró ningún registro con el ID #{id_a_editar}.")
+
+        with e2:
+            st.markdown("###### 🗑️ Eliminar Registro")
+            id_a_borrar = st.number_input("ID de registro a eliminar", min_value=0, step=1, value=0, key="id_del_input")
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("🗑️ Eliminar Registro Seleccionado", use_container_width=True):
                 if id_a_borrar > 0:
@@ -221,7 +275,9 @@ def run():
                     cursor.execute("DELETE FROM obligaciones WHERE id = ?", (id_a_borrar,))
                     conn.commit()
                     conn.close()
-                    st.success(f"Registro con ID {id_a_borrar} eliminado correctamente.")
+                    st.success(f"Registro con ID #{id_a_borrar} eliminado correctamente.")
                     st.rerun()
+                else:
+                    st.error("Por favor ingrese un ID válido a eliminar.")
     else:
         st.info("Aún no hay egresos registrados en la base de datos para 2026. Utiliza los formularios superiores para programar tus pagos fijos, quincenales, trimestrales y variables.")
