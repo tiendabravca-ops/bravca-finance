@@ -1,7 +1,84 @@
-import streamlit as st
+import sqlite3
 import pandas as pd
+import streamlit as st
+from datetime import datetime
+
+def obtener_ventas_reales_desde_db():
+    """Consulta la base de datos de cierres para extraer los totales reales agrupados por mes y tienda."""
+    conn = sqlite3.connect("db_cierres.db")
+    query = "SELECT fecha, negocio, colones FROM cierres"
+    df_db = pd.read_sql_query(query, conn)
+    conn.close()
+
+    se_dict = {m: 0.0 for m in ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']}
+    me_dict = {m: 0.0 for m in ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']}
+    
+    mapping_meses = {
+        '01': 'enero', '02': 'febrero', '03': 'marzo', '04': 'abril',
+        '05': 'mayo', '06': 'junio', '07': 'julio', '08': 'agosto',
+        '09': 'septiembre', '10': 'octubre', '11': 'noviembre', '12': 'diciembre'
+    }
+
+    if not df_db.empty:
+        df_db['fecha_dt'] = pd.to_datetime(df_db['fecha'], errors='coerce')
+        df_db['mes_num'] = df_db['fecha_dt'].dt.strftime('%m')
+        df_db['anio'] = df_db['fecha_dt'].dt.strftime('%Y')
+        
+        # Filtramos estrictamente el año 2026
+        df_2026 = df_db[df_db['anio'] == '2026']
+
+        for _, row in df_2026.iterrows():
+            m_num = row['mes_num']
+            if m_num in mapping_meses:
+                nombre_mes = mapping_meses[m_num]
+                tienda = str(row['negocio']).strip().lower()
+                monto = float(row['colones']) if pd.notnull(row['colones']) else 0.0
+
+                # Bravca Souvenir = Santa Elena | Bravca Extremo = Monteverde Extremo
+                if 'souvenir' in tienda or 'santa elena' in tienda:
+                    se_dict[nombre_mes] += monto
+                elif 'extremo' in tienda:
+                    me_dict[nombre_mes] += monto
+
+    return se_dict, me_dict
 
 def run():
+    # Estilos CSS originales recuperados para las tarjetas corporativas
+    st.markdown("""
+        <style>
+            .brabca-card {
+                background-color: #FFFFFF;
+                border: 1px solid #E2E8F0;
+                border-left: 4px solid #1B365D;
+                padding: 16px;
+                border-radius: 8px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }
+            .card-label {
+                font-size: 11px;
+                font-weight: 700;
+                color: #6E7C77;
+                letter-spacing: 0.5px;
+                margin-bottom: 4px;
+            }
+            .card-value {
+                font-size: 20px;
+                font-weight: 700;
+                color: #1B365D;
+            }
+            .card-value-gold {
+                font-size: 20px;
+                font-weight: 700;
+                color: #C5A059;
+            }
+            .card-value-alert {
+                font-size: 20px;
+                font-weight: 700;
+                color: #D9534F;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.markdown("##### 📈 COMPARATIVO DE VENTAS VS. PROYECCIÓN 2026")
     
     col_v1, col_v2 = st.columns(2)
@@ -23,7 +100,6 @@ def run():
 
     st.markdown("###### 📅 Selección de Período (Rango de Meses)")
     
-    # Botones de filtro rápido
     b1, b2, b3, b4 = st.columns(4)
     with b1:
         if st.button("⚡ Enero a la fecha (Octubre)", use_container_width=True):
@@ -62,9 +138,8 @@ def run():
     se_2025 = {'enero': 5609058.0, 'febrero': 5858674.0, 'marzo': 6563325.0, 'abril': 5030208.0, 'mayo': 3051706.0, 'junio': 4533249.0, 'julio': 6181795.0, 'agosto': 5707678.0, 'septiembre': 2240840.0, 'octubre': 2068705.0, 'noviembre': 4995976.0, 'diciembre': 6451352.0}
     me_2025 = {'enero': 3996723.0, 'febrero': 3849065.0, 'marzo': 3948468.0, 'abril': 3902629.0, 'mayo': 2604663.0, 'junio': 3305065.0, 'julio': 5166749.0, 'agosto': 4805683.0, 'septiembre': 2902578.0, 'octubre': 2914149.0, 'noviembre': 4123608.0, 'diciembre': 5747824.0}
 
-    # Ventas 2026 (con los meses futuros listos para recibir datos)
-    se_2026 = {'enero': 6505637.0, 'febrero': 6428153.0, 'marzo': 6568137.0, 'abril': 3404128.0, 'mayo': 2436870.0, 'junio': 2492625.0, 'julio': 3659071.0, 'agosto': 4591962.0, 'septiembre': 2076047.0, 'octubre': 0.0, 'noviembre': 0.0, 'diciembre': 0.0}
-    me_2026 = {'enero': 5217268.0, 'febrero': 3745984.0, 'marzo': 4792605.0, 'abril': 3885728.0, 'mayo': 3427314.0, 'junio': 2571164.0, 'julio': 4780260.0, 'agosto': 4339610.0, 'septiembre': 1287905.0, 'octubre': 0.0, 'noviembre': 0.0, 'diciembre': 0.0}
+    # Ventas 2026 conectadas automáticamente a la base de datos de cierres reales
+    se_2026, me_2026 = obtener_ventas_reales_desde_db()
 
     idx_start = orden_meses.index(mes_inicio)
     idx_end = orden_meses.index(mes_fin)
@@ -113,7 +188,7 @@ def run():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Tarjetas de totales
+    # Tarjetas de totales con diseño corporativo
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         st.markdown(f'''
