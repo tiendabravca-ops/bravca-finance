@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+from PIL import Image
 import database
 import modules.dashboard as dash
 import modules.proyecciones as proj
@@ -16,10 +17,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilos CSS - Estética Clean SaaS / Modern Dashboard (Inspirado en la referencia)
+# Estilos CSS - Estética Clean SaaS / Modern Dashboard (Inspirado en panel corporativo)
 st.markdown("""
     <style>
-    /* 1. Fondo Principal Limpio y Minimalista */
+    /* 1. Fondo Principal Limpio */
     .stApp {
         background-color: #F4F6F9 !important;
         color: #102A43 !important;
@@ -31,18 +32,18 @@ st.markdown("""
         color: #102A43;
     }
 
-    /* 3. Barra Lateral / Sidebar en Azul Marino Profundo */
+    /* 3. Barra Lateral en Azul Marino Profundo */
     [data-testid="stSidebar"] {
         background-color: #102A43 !important;
         border-right: none !important;
-        padding-top: 20px;
+        padding-top: 15px;
     }
     [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
         color: #FFFFFF !important;
         font-weight: 600;
     }
     
-    /* Estilo del Selector Radio en Sidebar estilo Dashboard UI */
+    /* Selector Radio en Sidebar */
     div[data-testid="stSidebar"] div[role="radiogroup"] > label {
         background-color: rgba(255, 255, 255, 0.05);
         border: none;
@@ -140,7 +141,7 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
     }
 
-    /* 8. Ajustes para pantallas pequeñas */
+    /* 8. Ajustes Responsivos */
     @media (max-width: 768px) {
         .brand-title {
             font-size: 1.6rem;
@@ -161,23 +162,23 @@ database.init_db()
 database.cargar_ventas_octubre_simplifica2()
 database.auto_generar_gastos_fijos()
 
-# Encabezado visual
-col_logo, col_header = st.columns([1, 5])
-with col_logo:
-    if os.path.exists("logo.png"):
-        st.image("logo.png", width=90)
-    elif os.path.exists("logo.jpg"):
-        st.image("logo.jpg", width=90)
-
-with col_header:
-    st.markdown('<div class="brand-title">bráˇca souvenir</div>', unsafe_allow_html=True)
-    st.markdown('<div class="brand-sub">SISTEMA FINANCIERO & TESORERÍA • SANTA ELENA | MONTEVERDE EXTREMO</div>', unsafe_allow_html=True)
-
-# Menú lateral
+# --- SECCIÓN DEL LOGO & BARRA LATERAL ---
+# Visualización del logo en la barra lateral si existe
 if os.path.exists("logo.png"):
-    st.sidebar.image("logo.png", width=120)
+    st.sidebar.image("logo.png", use_container_width=True)
 elif os.path.exists("logo.jpg"):
-    st.sidebar.image("logo.jpg", width=120)
+    st.sidebar.image("logo.jpg", use_container_width=True)
+
+st.sidebar.markdown("---")
+
+# Opción desplegable en el sidebar para cargar/actualizar el logo fácilmente
+with st.sidebar.expander("🖼️ Cargar / Cambiar Logo"):
+    uploaded_logo = st.file_uploader("Sube tu logo (PNG/JPG)", type=["png", "jpg", "jpeg"], key="uploader_logo")
+    if uploaded_logo is not None:
+        image = Image.open(uploaded_logo)
+        image.save("logo.png")
+        st.success("¡Logo cargado correctamente!")
+        st.rerun()
 
 st.sidebar.markdown("### **Menú Principal**")
 opcion = st.sidebar.radio(
@@ -193,6 +194,18 @@ opcion = st.sidebar.radio(
     ],
     label_visibility="collapsed"
 )
+
+# Encabezado visual de la aplicación principal
+col_logo, col_header = st.columns([1, 5])
+with col_logo:
+    if os.path.exists("logo.png"):
+        st.image("logo.png", width=90)
+    elif os.path.exists("logo.jpg"):
+        st.image("logo.jpg", width=90)
+
+with col_header:
+    st.markdown('<div class="brand-title">bráˇca souvenir</div>', unsafe_allow_html=True)
+    st.markdown('<div class="brand-sub">SISTEMA FINANCIERO & TESORERÍA • SANTA ELENA | MONTEVERDE EXTREMO</div>', unsafe_allow_html=True)
 
 # Enrutador de módulos
 if opcion == "📊 Dashboard Consolidado":
