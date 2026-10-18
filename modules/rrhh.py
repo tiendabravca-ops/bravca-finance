@@ -14,7 +14,9 @@ def crear_tablas_rrhh_si_no_existen(conn):
             nombre TEXT NOT NULL,
             tienda TEXT NOT NULL,
             puesto TEXT NOT NULL,
-            salario_base REAL NOT NULL,
+            tipo_pago TEXT DEFAULT 'Salario Fijo Mensual', -- 'Salario Fijo Mensual' o 'Por Horas / Libres'
+            salario_base REAL DEFAULT 0,
+            tarifa_hora REAL DEFAULT 0,
             fecha_ingreso TEXT NOT NULL,
             estado TEXT DEFAULT 'Activo'
         )
@@ -58,19 +60,19 @@ def crear_tablas_rrhh_si_no_existen(conn):
 
 def run():
     st.markdown('<div class="brand-title">Gestión de Recursos Humanos & Nómina</div>', unsafe_allow_html=True)
-    st.markdown('<div class="brand-sub">CONTROL DE PERSONAL, PLANILLA CCSS, COBERTURA DE LIBRES Y COSTOS • BRÁVCA</div>', unsafe_allow_html=True)
+    st.markdown('<div class="brand-sub">CONTROL DE PERSONAL, PLANILLA POR HORAS/CCSS, COBERTURA Y COSTOS • BRÁVCA</div>', unsafe_allow_html=True)
 
     conn = sqlite3.connect('bravca.db')
     crear_tablas_rrhh_si_no_existen(conn)
 
-    # Crear carpetas locales para almacenamiento de archivos
+    # Carpetas para archivos
     os.makedirs("archivos_rrhh/folletos", exist_ok=True)
     os.makedirs("archivos_rrhh/manuales", exist_ok=True)
 
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "👥 Colaboradores", 
         "🧮 Planilla Neto & CCSS",
-        "💸 Adelantos & Libres", 
+        "💸 Adelantos & Horas Libres", 
         "📊 Análisis & Gráficos",
         "📢 Reclutamiento & Folletos", 
         "📋 Manuales de Puesto", 
@@ -78,7 +80,7 @@ def run():
     ])
 
     # ---------------------------------------------------------
-    # TAB 1: COLABORADORES
+    # TAB 1: COLABORADORES (CON OPCIÓN POR HORAS)
     # ---------------------------------------------------------
     with tab1:
         st.markdown("### Registro de Nuevo Colaborador")
@@ -86,26 +88,33 @@ def run():
             col1, col2 = st.columns(2)
             with col1:
                 nombre = st.text_input("Nombre Completo")
-                tienda = st.selectbox("Tienda", ["Santa Elena", "Monteverde Extremo"])
-                puesto = st.text_input("Puesto / Rol")
+                tienda = st.selectbox("Tienda Destino", ["Santa Elena", "Monteverde Extremo"])
+                puesto = st.text_input("Puesto / Rol (Ej: Cajero, Cubre Libres Fines de Semana)")
             with col2:
-                salario_base = st.number_input("Salario Base Mensual (₡)", min_value=0.0, step=10000.0)
+                tipo_pago = st.selectbox("Modalidad de Pago", ["Salario Fijo Mensual", "Por Horas / Fin de Semana"])
+                if tipo_pago == "Salario Fijo Mensual":
+                    salario_base = st.number_input("Salario Base Mensual (₡)", min_value=0.0, step=10000.0)
+                    tarifa_hora = 0.0
+                else:
+                    salario_base = 0.0
+                    tarifa_hora = st.number_input("Tarifa por Hora (₡)", min_value=0.0, value=2000.0, step=250.0)
+                
                 fecha_ingreso = st.date_input("Fecha de Ingreso", value=datetime.today())
             
             submitted = st.form_submit_button("Guardar Colaborador")
             if submitted and nombre:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "INSERT INTO colaboradores (nombre, tienda, puesto, salario_base, fecha_ingreso) VALUES (?, ?, ?, ?, ?)",
-                    (nombre, tienda, puesto, salario_base, str(fecha_ingreso))
+                    "INSERT INTO colaboradores (nombre, tienda, puesto, tipo_pago, salario_base, tarifa_hora, fecha_ingreso) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (nombre, tienda, puesto, tipo_pago, salario_base, tarifa_hora, str(fecha_ingreso))
                 )
                 conn.commit()
-                st.success(f"¡Colaborador {nombre} registrado con éxito!")
+                st.success(f"¡Colaborador {nombre} registrado con éxito ({tipo_pago})!")
                 st.rerun()
 
         st.markdown("---")
         st.markdown("### Listado de Personal Activo")
-        df_col = pd.read_sql("SELECT id, nombre, tienda, puesto, salario_base, fecha_ingreso FROM colaboradores WHERE estado='Activo'", conn)
+        df_col = pd.read_sql("SELECT id, nombre, tienda, puesto, tipo_pago, salario_base, tarifa_hora, fecha_ingreso FROM colaboradores WHERE estado='Activo'", conn)
         if not df_col.empty:
             st.dataframe(df_col, use_container_width=True)
             csv = df_col.to_csv(index=False).encode('utf-8')
@@ -114,37 +123,57 @@ def run():
             st.info("No hay colaboradores registrados todavía.")
 
     # ---------------------------------------------------------
-    # TAB 2: CÁLCULO DE PLANILLA NETO & DEDUCCIONES CCSS
+    # TAB 2: CÁLCULO DE PLANILLA NETO & CCSS (SOPORTA HORAS)
     # ---------------------------------------------------------
     with tab2:
-        st.markdown("### 🧮 Cálculo de Nómina Mensual / Quincenal con CCSS")
-        st.caption("Cargas Obrero CCSS: 10.67% | Cargas Patronales Estimadas: 26.67%")
+        st.markdown("### 🧮 Cálculo de Nómina Quincenal / Mensual con CCSS")
+        st.caption("Contempla personal con salario fijo y personal eventual por horas/fin de semana.")
 
-        df_activos = pd.read_sql("SELECT id, nombre, tienda, puesto, salario_base FROM colaboradores WHERE estado='Activo'", conn)
+        c_periodo, _ = st.columns([2, 2])
+        with c_periodo:
+            periodo = st.radio(
+                "Selecciona el Periodo de Pago:", 
+                ["1era Quincena (50%)", "2da Quincena (50%)", "Mensual Completo (100%)"], 
+                horizontal=True
+            )
+
+        factor_periodo = 0.5 if "Quincena" in periodo else 1.0
+
+        df_activos = pd.read_sql("SELECT id, nombre, tienda, puesto, tipo_pago, salario_base, tarifa_hora FROM colaboradores WHERE estado='Activo'", conn)
 
         if not df_activos.empty:
             lista_planilla = []
             for _, emp in df_activos.iterrows():
                 emp_id = emp['id']
                 
+                # Coberturas de libres / horas trabajadas registradas
+                df_cob = pd.read_sql(f"SELECT SUM(monto_total) as total, SUM(horas_trabajadas) as horas FROM coberturas_libres WHERE colaborador_id={emp_id}", conn)
+                total_coberturas = df_cob['total'].iloc[0] if df_cob['total'].iloc[0] else 0.0
+                horas_totales = df_cob['horas'].iloc[0] if df_cob['horas'].iloc[0] else 0.0
+
+                if emp['tipo_pago'] == "Salario Fijo Mensual":
+                    salario_periodo = emp['salario_base'] * factor_periodo
+                    salario_bruto = salario_periodo + total_coberturas
+                else:
+                    # Pago por horas de fin de semana
+                    salario_periodo = 0.0
+                    salario_bruto = total_coberturas
+
                 # Adelantos registrados
                 df_ad = pd.read_sql(f"SELECT SUM(monto) as total FROM movimientos_rrhh WHERE colaborador_id={emp_id} AND tipo LIKE '%Adelanto%'", conn)
                 total_adelantos = df_ad['total'].iloc[0] if df_ad['total'].iloc[0] else 0.0
 
-                # Coberturas de libres
-                df_cob = pd.read_sql(f"SELECT SUM(monto_total) as total FROM coberturas_libres WHERE colaborador_id={emp_id}", conn)
-                total_coberturas = df_cob['total'].iloc[0] if df_cob['total'].iloc[0] else 0.0
-
-                salario_bruto = emp['salario_base'] + total_coberturas
                 ccss_obrero = salario_bruto * 0.1067
                 ccss_patronal = salario_bruto * 0.2667
                 pago_neto = salario_bruto - ccss_obrero - total_adelantos
 
                 lista_planilla.append({
                     "Colaborador": emp['nombre'],
+                    "Modalidad": emp['tipo_pago'],
                     "Tienda": emp['tienda'],
-                    "Salario Base": emp['salario_base'],
-                    "Cob. Libres / Extras (+)": total_coberturas,
+                    f"Salario Base ({periodo.split(' ')[0]})": salario_periodo,
+                    "Horas Libres Trabaljadas": horas_totales,
+                    "Pago por Horas/Extras (+)": total_coberturas,
                     "Salario Bruto": salario_bruto,
                     "CCSS Obrero (10.67%) (-)": ccss_obrero,
                     "Adelantos (-)": total_adelantos,
@@ -153,9 +182,11 @@ def run():
                 })
 
             df_planilla_final = pd.DataFrame(lista_planilla)
+            col_sal_periodo = f"Salario Base ({periodo.split(' ')[0]})"
+            
             st.dataframe(df_planilla_final.style.format({
-                "Salario Base": "₡{:,.2f}",
-                "Cob. Libres / Extras (+)": "₡{:,.2f}",
+                col_sal_periodo: "₡{:,.2f}",
+                "Pago por Horas/Extras (+)": "₡{:,.2f}",
                 "Salario Bruto": "₡{:,.2f}",
                 "CCSS Obrero (10.67%) (-)": "₡{:,.2f}",
                 "Adelantos (-)": "₡{:,.2f}",
@@ -178,18 +209,42 @@ def run():
             st.info("No hay colaboradores activos para procesar planilla.")
 
     # ---------------------------------------------------------
-    # TAB 3: ADELANTOS & COBERTURA DE LIBRES
+    # TAB 3: REGISTRO DE HORAS TRABAJADAS & ADELANTOS
     # ---------------------------------------------------------
     with tab3:
-        st.markdown("### Registro de Movimientos de Planilla")
-        df_colab_list = pd.read_sql("SELECT id, nombre FROM colaboradores WHERE estado='Activo'", conn)
+        st.markdown("### Registro de Horas Trabajadas y Movimientos")
+        df_colab_list = pd.read_sql("SELECT id, nombre, tarifa_hora FROM colaboradores WHERE estado='Activo'", conn)
         
         if not df_colab_list.empty:
             colab_dict = dict(zip(df_colab_list['nombre'], df_colab_list['id']))
+            tarifa_dict = dict(zip(df_colab_list['id'], df_colab_list['tarifa_hora']))
 
             col_a, col_b = st.columns(2)
 
             with col_a:
+                st.markdown("##### ⏳ Registrar Horas / Cobertura de Fin de Semana")
+                with st.form("form_cobertura", clear_on_submit=True):
+                    sel_colab_cob = st.selectbox("Colaborador", list(colab_dict.keys()), key="cob_colab")
+                    c_id = colab_dict[sel_colab_cob]
+                    tarifa_sugerida = tarifa_dict[c_id] if tarifa_dict[c_id] > 0 else 2000.0
+
+                    horas = st.number_input("Horas Trabajadas en el Turno", min_value=0.5, max_value=24.0, value=8.0, step=0.5)
+                    tarifa = st.number_input("Tarifa por Hora (₡)", min_value=1000.0, value=float(tarifa_sugerida), step=250.0)
+                    motivo = st.text_input("Motivo / Tienda (Ej: Cobertura Sabado y Domingo en Extremo)")
+                    monto_tot = horas * tarifa
+                    st.caption(f"**Total a pagar por turno:** ₡ {monto_tot:,.2f}")
+
+                    if st.form_submit_button("Registrar Horas"):
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "INSERT INTO coberturas_libres (colaborador_id, fecha, horas_trabajadas, tarifa_hora, monto_total, motivo_cobertura) VALUES (?, ?, ?, ?, ?, ?)",
+                            (c_id, str(datetime.today().date()), horas, tarifa, monto_tot, motivo)
+                        )
+                        conn.commit()
+                        st.success("Horas registradas correctamente.")
+                        st.rerun()
+
+            with col_b:
                 st.markdown("##### 💸 Registrar Adelanto / Deducción")
                 with st.form("form_movimiento", clear_on_submit=True):
                     sel_colab = st.selectbox("Colaborador", list(colab_dict.keys()), key="mov_colab")
@@ -206,30 +261,8 @@ def run():
                         st.success("Registrado correctamente.")
                         st.rerun()
 
-            with col_b:
-                st.markdown("##### ⏳ Registrar Cobertura de Día Libre / Turno Extra")
-                with st.form("form_cobertura", clear_on_submit=True):
-                    sel_colab_cob = st.selectbox("Colaborador que Cubre", list(colab_dict.keys()), key="cob_colab")
-                    horas = st.number_input("Horas / Horas Equivalentes", min_value=0.5, max_value=24.0, value=8.0, step=0.5)
-                    tarifa = st.number_input("Tarifa por Hora (₡)", min_value=1000.0, value=2000.0, step=250.0)
-                    motivo = st.text_input("Motivo (Ej: Cubre libre a Juan en Souvenir)")
-                    monto_tot = horas * tarifa
-                    st.caption(f"**Total a pagar por turno:** ₡ {monto_tot:,.2f}")
-                    if st.form_submit_button("Registrar Cobertura"):
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "INSERT INTO coberturas_libres (colaborador_id, fecha, horas_trabajadas, tarifa_hora, monto_total, motivo_cobertura) VALUES (?, ?, ?, ?, ?, ?)",
-                            (colab_dict[sel_colab_cob], str(datetime.today().date()), horas, tarifa, monto_tot, motivo)
-                        )
-                        conn.commit()
-                        st.success("Cobertura registrada correctamente.")
-                        st.rerun()
-
-        else:
-            st.warning("Debe registrar al menos un colaborador activo.")
-
         st.markdown("---")
-        st.markdown("### Historial de Coberturas de Libres Recientes")
+        st.markdown("### Historial Reciente de Horas y Coberturas Registradas")
         df_cob_rec = pd.read_sql("""
             SELECT cl.fecha, c.nombre, cl.horas_trabajadas, cl.tarifa_hora, cl.monto_total, cl.motivo_cobertura 
             FROM coberturas_libres cl 
@@ -238,8 +271,6 @@ def run():
         """, conn)
         if not df_cob_rec.empty:
             st.dataframe(df_cob_rec, use_container_width=True)
-        else:
-            st.info("No hay registros de coberturas de libres.")
 
     # ---------------------------------------------------------
     # TAB 4: ANÁLISIS & GRÁFICOS DE COSTOS
@@ -259,7 +290,7 @@ def run():
             with c1:
                 st.markdown(f"""
                     <div class="brabca-card">
-                        <div class="card-label">Planilla Base Mensual Consolidada</div>
+                        <div class="card-label">Planilla Fija Mensual Consolidada</div>
                         <div class="card-value">₡ {total_general:,.2f}</div>
                     </div>
                 """, unsafe_allow_html=True)
@@ -274,7 +305,7 @@ def run():
             st.markdown("---")
             col_chart1, col_chart2 = st.columns(2)
             with col_chart1:
-                st.markdown("##### **Costo de Planilla por Tienda (₡)**")
+                st.markdown("##### **Costo Fijo por Tienda (₡)**")
                 st.bar_chart(df_costos.set_index('tienda')[['total_planilla']])
             with col_chart2:
                 st.markdown("##### **Distribución de Personal por Tienda**")
