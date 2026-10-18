@@ -31,6 +31,18 @@ def crear_tablas_rrhh_si_no_existen(conn):
         )
     ''')
     cursor.execute('''
+        CREATE TABLE IF NOT EXISTS coberturas_libres (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            colaborador_id INTEGER,
+            fecha TEXT NOT NULL,
+            horas_trabajadas REAL NOT NULL,
+            tarifa_hora REAL NOT NULL,
+            monto_total REAL NOT NULL,
+            motivo_cobertura TEXT,
+            FOREIGN KEY (colaborador_id) REFERENCES colaboradores (id)
+        )
+    ''')
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS entrevistas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             candidato TEXT NOT NULL,
@@ -45,8 +57,8 @@ def crear_tablas_rrhh_si_no_existen(conn):
     conn.commit()
 
 def run():
-    st.markdown('<div class="brand-title">Gestión de Recursos Humanos</div>', unsafe_allow_html=True)
-    st.markdown('<div class="brand-sub">CONTROL DE PERSONAL, PLANILLA, RECLUTAMIENTO Y COSTOS • BRÁVCA</div>', unsafe_allow_html=True)
+    st.markdown('<div class="brand-title">Gestión de Recursos Humanos & Nómina</div>', unsafe_allow_html=True)
+    st.markdown('<div class="brand-sub">CONTROL DE PERSONAL, PLANILLA CCSS, COBERTURA DE LIBRES Y COSTOS • BRÁVCA</div>', unsafe_allow_html=True)
 
     conn = sqlite3.connect('bravca.db')
     crear_tablas_rrhh_si_no_existen(conn)
@@ -55,9 +67,10 @@ def run():
     os.makedirs("archivos_rrhh/folletos", exist_ok=True)
     os.makedirs("archivos_rrhh/manuales", exist_ok=True)
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "👥 Colaboradores", 
-        "💸 Adelantos y Planilla", 
+        "🧮 Planilla Neto & CCSS",
+        "💸 Adelantos & Libres", 
         "📊 Análisis & Gráficos",
         "📢 Reclutamiento & Folletos", 
         "📋 Manuales de Puesto", 
@@ -76,7 +89,7 @@ def run():
                 tienda = st.selectbox("Tienda", ["Santa Elena", "Monteverde Extremo"])
                 puesto = st.text_input("Puesto / Rol")
             with col2:
-                salario_base = st.number_input("Salario Base (₡)", min_value=0.0, step=10000.0)
+                salario_base = st.number_input("Salario Base Mensual (₡)", min_value=0.0, step=10000.0)
                 fecha_ingreso = st.date_input("Fecha de Ingreso", value=datetime.today())
             
             submitted = st.form_submit_button("Guardar Colaborador")
@@ -95,72 +108,150 @@ def run():
         df_col = pd.read_sql("SELECT id, nombre, tienda, puesto, salario_base, fecha_ingreso FROM colaboradores WHERE estado='Activo'", conn)
         if not df_col.empty:
             st.dataframe(df_col, use_container_width=True)
-            
-            # Botón para exportar a Excel / CSV
             csv = df_col.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Exportar Lista a CSV", csv, "personal_bravca.csv", "text/csv")
         else:
             st.info("No hay colaboradores registrados todavía.")
 
     # ---------------------------------------------------------
-    # TAB 2: ADELANTOS Y PLANILLA
+    # TAB 2: CÁLCULO DE PLANILLA NETO & DEDUCCIONES CCSS
     # ---------------------------------------------------------
     with tab2:
-        st.markdown("### Registro de Adelantos o Movimientos")
+        st.markdown("### 🧮 Cálculo de Nómina Mensual / Quincenal con CCSS")
+        st.caption("Cargas Obrero CCSS: 10.67% | Cargas Patronales Estimadas: 26.67%")
+
+        df_activos = pd.read_sql("SELECT id, nombre, tienda, puesto, salario_base FROM colaboradores WHERE estado='Activo'", conn)
+
+        if not df_activos.empty:
+            lista_planilla = []
+            for _, emp in df_activos.iterrows():
+                emp_id = emp['id']
+                
+                # Adelantos registrados
+                df_ad = pd.read_sql(f"SELECT SUM(monto) as total FROM movimientos_rrhh WHERE colaborador_id={emp_id} AND tipo LIKE '%Adelanto%'", conn)
+                total_adelantos = df_ad['total'].iloc[0] if df_ad['total'].iloc[0] else 0.0
+
+                # Coberturas de libres
+                df_cob = pd.read_sql(f"SELECT SUM(monto_total) as total FROM coberturas_libres WHERE colaborador_id={emp_id}", conn)
+                total_coberturas = df_cob['total'].iloc[0] if df_cob['total'].iloc[0] else 0.0
+
+                salario_bruto = emp['salario_base'] + total_coberturas
+                ccss_obrero = salario_bruto * 0.1067
+                ccss_patronal = salario_bruto * 0.2667
+                pago_neto = salario_bruto - ccss_obrero - total_adelantos
+
+                lista_planilla.append({
+                    "Colaborador": emp['nombre'],
+                    "Tienda": emp['tienda'],
+                    "Salario Base": emp['salario_base'],
+                    "Cob. Libres / Extras (+)": total_coberturas,
+                    "Salario Bruto": salario_bruto,
+                    "CCSS Obrero (10.67%) (-)": ccss_obrero,
+                    "Adelantos (-)": total_adelantos,
+                    "Pago Neto Liquido": pago_neto,
+                    "Costo Patronal CCSS (26.67%)": ccss_patronal
+                })
+
+            df_planilla_final = pd.DataFrame(lista_planilla)
+            st.dataframe(df_planilla_final.style.format({
+                "Salario Base": "₡{:,.2f}",
+                "Cob. Libres / Extras (+)": "₡{:,.2f}",
+                "Salario Bruto": "₡{:,.2f}",
+                "CCSS Obrero (10.67%) (-)": "₡{:,.2f}",
+                "Adelantos (-)": "₡{:,.2f}",
+                "Pago Neto Liquido": "₡{:,.2f}",
+                "Costo Patronal CCSS (26.67%)": "₡{:,.2f}"
+            }), use_container_width=True)
+
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.metric("Total Neto a Pagar", f"₡ {df_planilla_final['Pago Neto Liquido'].sum():,.2f}")
+            with c2:
+                st.metric("Total Retención CCSS Obrero", f"₡ {df_planilla_final['CCSS Obrero (10.67%) (-)'].sum():,.2f}")
+            with c3:
+                st.metric("Total Costo Patronal CCSS", f"₡ {df_planilla_final['Costo Patronal CCSS (26.67%)'].sum():,.2f}")
+
+            csv_plan = df_planilla_final.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Exportar Reporte de Planilla Netas a CSV", csv_plan, "planilla_netos_bravca.csv", "text/csv")
+
+        else:
+            st.info("No hay colaboradores activos para procesar planilla.")
+
+    # ---------------------------------------------------------
+    # TAB 3: ADELANTOS & COBERTURA DE LIBRES
+    # ---------------------------------------------------------
+    with tab3:
+        st.markdown("### Registro de Movimientos de Planilla")
         df_colab_list = pd.read_sql("SELECT id, nombre FROM colaboradores WHERE estado='Activo'", conn)
         
         if not df_colab_list.empty:
             colab_dict = dict(zip(df_colab_list['nombre'], df_colab_list['id']))
-            
-            with st.form("form_movimiento", clear_on_submit=True):
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    sel_colab = st.selectbox("Colaborador", list(colab_dict.keys()))
-                with c2:
-                    tipo_mov = st.selectbox("Tipo de Movimiento", ["Adelanto de Salario", "Bono / Incentivo", "Deducción Extraordinaria"])
-                with c3:
+
+            col_a, col_b = st.columns(2)
+
+            with col_a:
+                st.markdown("##### 💸 Registrar Adelanto / Deducción")
+                with st.form("form_movimiento", clear_on_submit=True):
+                    sel_colab = st.selectbox("Colaborador", list(colab_dict.keys()), key="mov_colab")
+                    tipo_mov = st.selectbox("Tipo", ["Adelanto de Salario", "Deducción Extraordinaria", "Bono / Incentivo"])
                     monto = st.number_input("Monto (₡)", min_value=0.0, step=5000.0)
-                
-                nota = st.text_input("Observación / Motivo")
-                sub_mov = st.form_submit_button("Registrar Movimiento")
-                
-                if sub_mov and monto > 0:
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "INSERT INTO movimientos_rrhh (colaborador_id, tipo, monto, fecha, nota) VALUES (?, ?, ?, ?, ?)",
-                        (colab_dict[sel_colab], tipo_mov, monto, str(datetime.today().date()), nota)
-                    )
-                    conn.commit()
-                    st.success("Movimiento registrado correctamente.")
-                    st.rerun()
-        else:
-            st.warning("Debe registrar al menos un colaborador en la pestaña de Colaboradores.")
+                    nota = st.text_input("Observación / Motivo")
+                    if st.form_submit_button("Registrar Movimiento") and monto > 0:
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "INSERT INTO movimientos_rrhh (colaborador_id, tipo, monto, fecha, nota) VALUES (?, ?, ?, ?, ?)",
+                            (colab_dict[sel_colab], tipo_mov, monto, str(datetime.today().date()), nota)
+                        )
+                        conn.commit()
+                        st.success("Registrado correctamente.")
+                        st.rerun()
 
-        st.markdown("### Historial de Movimientos Recientes")
-        df_mov = pd.read_sql("""
-            SELECT m.fecha, c.nombre, m.tipo, m.monto, m.nota 
-            FROM movimientos_rrhh m 
-            JOIN colaboradores c ON m.colaborador_id = c.id 
-            ORDER BY m.fecha DESC LIMIT 20
+            with col_b:
+                st.markdown("##### ⏳ Registrar Cobertura de Día Libre / Turno Extra")
+                with st.form("form_cobertura", clear_on_submit=True):
+                    sel_colab_cob = st.selectbox("Colaborador que Cubre", list(colab_dict.keys()), key="cob_colab")
+                    horas = st.number_input("Horas / Horas Equivalentes", min_value=0.5, max_value=24.0, value=8.0, step=0.5)
+                    tarifa = st.number_input("Tarifa por Hora (₡)", min_value=1000.0, value=2000.0, step=250.0)
+                    motivo = st.text_input("Motivo (Ej: Cubre libre a Juan en Souvenir)")
+                    monto_tot = horas * tarifa
+                    st.caption(f"**Total a pagar por turno:** ₡ {monto_tot:,.2f}")
+                    if st.form_submit_button("Registrar Cobertura"):
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "INSERT INTO coberturas_libres (colaborador_id, fecha, horas_trabajadas, tarifa_hora, monto_total, motivo_cobertura) VALUES (?, ?, ?, ?, ?, ?)",
+                            (colab_dict[sel_colab_cob], str(datetime.today().date()), horas, tarifa, monto_tot, motivo)
+                        )
+                        conn.commit()
+                        st.success("Cobertura registrada correctamente.")
+                        st.rerun()
+
+        else:
+            st.warning("Debe registrar al menos un colaborador activo.")
+
+        st.markdown("---")
+        st.markdown("### Historial de Coberturas de Libres Recientes")
+        df_cob_rec = pd.read_sql("""
+            SELECT cl.fecha, c.nombre, cl.horas_trabajadas, cl.tarifa_hora, cl.monto_total, cl.motivo_cobertura 
+            FROM coberturas_libres cl 
+            JOIN colaboradores c ON cl.colaborador_id = c.id 
+            ORDER BY cl.fecha DESC LIMIT 15
         """, conn)
-        if not df_mov.empty:
-            st.dataframe(df_mov, use_container_width=True)
+        if not df_cob_rec.empty:
+            st.dataframe(df_cob_rec, use_container_width=True)
         else:
-            st.info("No hay movimientos registrados.")
+            st.info("No hay registros de coberturas de libres.")
 
     # ---------------------------------------------------------
-    # TAB 3: ANÁLISIS & GRÁFICOS DE COSTOS
+    # TAB 4: ANÁLISIS & GRÁFICOS DE COSTOS
     # ---------------------------------------------------------
-    with tab3:
+    with tab4:
         st.markdown("### 📊 Distribución Visual de Costos de Planilla")
-        
         df_costos = pd.read_sql("""
             SELECT tienda, COUNT(id) as total_empleados, SUM(salario_base) as total_planilla 
             FROM colaboradores WHERE estado='Activo' GROUP BY tienda
         """, conn)
 
         if not df_costos.empty:
-            # Tarjetas ejecutivas superiores
             c1, c2 = st.columns(2)
             total_general = df_costos['total_planilla'].sum()
             total_empleados = df_costos['total_empleados'].sum()
@@ -168,7 +259,7 @@ def run():
             with c1:
                 st.markdown(f"""
                     <div class="brabca-card">
-                        <div class="card-label">Planilla Mensual Consolidada</div>
+                        <div class="card-label">Planilla Base Mensual Consolidada</div>
                         <div class="card-value">₡ {total_general:,.2f}</div>
                     </div>
                 """, unsafe_allow_html=True)
@@ -182,30 +273,21 @@ def run():
 
             st.markdown("---")
             col_chart1, col_chart2 = st.columns(2)
-            
             with col_chart1:
                 st.markdown("##### **Costo de Planilla por Tienda (₡)**")
-                df_bar = df_costos.set_index('tienda')[['total_planilla']]
-                st.bar_chart(df_bar)
-
+                st.bar_chart(df_costos.set_index('tienda')[['total_planilla']])
             with col_chart2:
                 st.markdown("##### **Distribución de Personal por Tienda**")
-                df_emp = df_costos.set_index('tienda')[['total_empleados']]
-                st.bar_chart(df_emp)
-
-        else:
-            st.info("Aún no hay suficiente información para generar los gráficos de costos.")
+                st.bar_chart(df_costos.set_index('tienda')[['total_empleados']])
 
     # ---------------------------------------------------------
-    # TAB 4: RECLUTAMIENTO & FOLLETOS (IMÁGENES)
+    # TAB 5: RECLUTAMIENTO & FOLLETOS
     # ---------------------------------------------------------
-    with tab4:
+    with tab5:
         st.markdown("### 📢 Banco de Afiches y Folletos de Contratación")
-        
         with st.expander("📤 Subir Nuevo Folleto de Reclutamiento"):
             folleto_file = st.file_uploader("Selecciona la imagen promocional (PNG/JPG)", type=["png", "jpg", "jpeg"])
-            nombre_folleto = st.text_input("Nombre / Referencia del Folleto (Ej: Busqueda_Cajero_SantaElena)")
-            
+            nombre_folleto = st.text_input("Nombre / Referencia del Folleto")
             if st.button("Guardar Folleto") and folleto_file and nombre_folleto:
                 path = os.path.join("archivos_rrhh/folletos", f"{nombre_folleto}.png")
                 image = Image.open(folleto_file)
@@ -213,31 +295,22 @@ def run():
                 st.success("¡Folleto guardado correctamente!")
                 st.rerun()
 
-        st.markdown("---")
-        st.markdown("### Folletos Disponibles")
         folletos_existentes = os.listdir("archivos_rrhh/folletos")
-        
         if folletos_existentes:
             cols = st.columns(3)
             for idx, file in enumerate(folletos_existentes):
                 with cols[idx % 3]:
                     file_path = os.path.join("archivos_rrhh/folletos", file)
                     st.image(file_path, caption=file.replace(".png", ""), use_container_width=True)
-                    with open(file_path, "rb") as f:
-                        st.download_button(f"📥 Descargar {file}", f, file_name=file, key=f"btn_folleto_{idx}")
-        else:
-            st.info("Aún no se han subido folletos de contratación.")
 
     # ---------------------------------------------------------
-    # TAB 5: MANUALES DE PUESTO (DOCUMENTOS)
+    # TAB 6: MANUALES DE PUESTO
     # ---------------------------------------------------------
-    with tab5:
+    with tab6:
         st.markdown("### 📋 Manuales de Puesto y Políticas de Tienda")
-        
         with st.expander("📤 Cargar Nuevo Manual / Documento (PDF/Word)"):
             doc_file = st.file_uploader("Selecciona el archivo PDF o Word", type=["pdf", "docx"])
-            titulo_doc = st.text_input("Título del Puesto / Documento (Ej: Manual_Vendedor_Monteverde)")
-            
+            titulo_doc = st.text_input("Título del Puesto / Documento")
             if st.button("Guardar Documento") and doc_file and titulo_doc:
                 ext = doc_file.name.split(".")[-1]
                 path = os.path.join("archivos_rrhh/manuales", f"{titulo_doc}.{ext}")
@@ -246,28 +319,16 @@ def run():
                 st.success("¡Documento guardado con éxito!")
                 st.rerun()
 
-        st.markdown("---")
-        st.markdown("### Biblioteca de Manuales")
         manuales_existentes = os.listdir("archivos_rrhh/manuales")
-        
         if manuales_existentes:
             for file in manuales_existentes:
-                file_path = os.path.join("archivos_rrhh/manuales", file)
-                col_name, col_btn = st.columns([3, 1])
-                with col_name:
-                    st.markdown(f"📄 **{file}**")
-                with col_btn:
-                    with open(file_path, "rb") as f:
-                        st.download_button("📥 Descargar", f, file_name=file, key=f"btn_man_{file}")
-        else:
-            st.info("No hay manuales cargados en la biblioteca.")
+                st.markdown(f"📄 **{file}**")
 
     # ---------------------------------------------------------
-    # TAB 6: ENTREVISTAS Y CANDIDATOS
+    # TAB 7: ENTREVISTAS Y CANDIDATOS
     # ---------------------------------------------------------
-    with tab6:
+    with tab7:
         st.markdown("### 🗣️ Registro y Control de Entrevistas")
-        
         with st.form("form_entrevista", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
@@ -279,8 +340,7 @@ def run():
                 calificacion = st.slider("Calificación (1 al 10)", 1, 10, 7)
                 estado_ent = st.selectbox("Estado", ["En Evaluación", "Contratado", "Descartado"])
             
-            notas_ent = st.text_area("Notas / Impresiones de la Entrevista")
-            
+            notas_ent = st.text_area("Notas / Impresiones")
             if st.form_submit_button("Guardar Entrevista") and candidato:
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -288,15 +348,11 @@ def run():
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (candidato, tienda_ent, puesto_ent, str(fecha_ent), calificacion, estado_ent, notas_ent))
                 conn.commit()
-                st.success(f"Entrevista de {candidato} registrada con éxito.")
+                st.success("Entrevista registrada correctamente.")
                 st.rerun()
 
-        st.markdown("---")
-        st.markdown("### Historial de Candidatos Entrevistados")
         df_ent = pd.read_sql("SELECT fecha, candidato, tienda, puesto, calificacion, estado, notas FROM entrevistas ORDER BY fecha DESC", conn)
         if not df_ent.empty:
             st.dataframe(df_ent, use_container_width=True)
-        else:
-            st.info("No hay entrevistas registradas.")
 
     conn.close()
