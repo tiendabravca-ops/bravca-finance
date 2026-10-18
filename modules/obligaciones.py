@@ -27,7 +27,8 @@ def inicializar_bd():
         "ALTER TABLE obligaciones ADD COLUMN tienda TEXT DEFAULT 'Consolidado (Ambas Tiendas)'",
         "ALTER TABLE obligaciones ADD COLUMN tipo_gasto TEXT DEFAULT 'Fijo'",
         "ALTER TABLE obligaciones ADD COLUMN fecha_pago TEXT DEFAULT ''",
-        "ALTER TABLE obligaciones ADD COLUMN periodicidad TEXT DEFAULT 'Mensual'"
+        "ALTER TABLE obligaciones ADD COLUMN periodicidad TEXT DEFAULT 'Mensual'",
+        "ALTER TABLE obligaciones ADD COLUMN pagado INTEGER DEFAULT 0"
     ]
     
     for mig in migraciones:
@@ -121,7 +122,7 @@ def run():
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
                     cursor.execute(
-                        "INSERT INTO obligaciones (anio, mes, tienda, tipo_gasto, categoria, descripcion, monto, fecha_pago, periodicidad) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO obligaciones (anio, mes, tienda, tipo_gasto, categoria, descripcion, monto, fecha_pago, periodicidad, pagado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
                         (anio, mes, tienda, "Fijo", categoria, descripcion, monto, fecha_pago_str, periodicidad)
                     )
                     conn.commit()
@@ -168,7 +169,7 @@ def run():
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
                     cursor.execute(
-                        "INSERT INTO obligaciones (anio, mes, tienda, tipo_gasto, categoria, descripcion, monto, fecha_pago, periodicidad) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO obligaciones (anio, mes, tienda, tipo_gasto, categoria, descripcion, monto, fecha_pago, periodicidad, pagado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
                         (anio_v, mes_v, tienda_v, "Variable", categoria_v, descripcion_v, monto_v, fecha_pago_var_str, periodicidad_v)
                     )
                     conn.commit()
@@ -192,31 +193,34 @@ def run():
     # Consulta de registros desde la base de datos
     conn = sqlite3.connect(db_path)
     df_registros = pd.read_sql_query(
-        "SELECT id, fecha_pago as 'Fecha Pago', periodicidad as Periodicidad, mes as Mes, tienda as Tienda, tipo_gasto as Tipo, categoria as Categoria, descripcion as Descripcion, monto as Monto FROM obligaciones WHERE anio = 2026 ORDER BY fecha_pago DESC", 
+        "SELECT id, pagado as Pagado, fecha_pago as 'Fecha Pago', periodicidad as Periodicidad, mes as Mes, tienda as Tienda, tipo_gasto as Tipo, categoria as Categoria, descripcion as Descripcion, monto as Monto FROM obligaciones WHERE anio = 2026 ORDER BY fecha_pago DESC", 
         conn
     )
     conn.close()
 
     if not df_registros.empty:
+        # Normalizar estado booleano para el Data Editor
+        df_registros['Pagado'] = df_registros['Pagado'].apply(lambda x: True if x == 1 or x is True else False)
+
         # Aplicar el filtro según la tienda seleccionada
         if filtro_tienda != "Consolidado (Ambas Tiendas)":
             df_filtrado = df_registros[df_registros['Tienda'].isin([filtro_tienda, "Consolidado (Ambas Tiendas)"])].copy()
         else:
             df_filtrado = df_registros.copy()
 
-        # Cálculo de totales
-        total_egresos = df_filtrado['Monto'].sum()
-        total_fijos = df_filtrado[df_filtrado['Tipo'] == 'Fijo']['Monto'].sum()
-        total_variables = df_filtrado[df_filtrado['Tipo'] == 'Variable']['Monto'].sum()
+        # Cálculo de totales dinámicos
+        total_programado = df_filtrado['Monto'].sum()
+        total_pagado = df_filtrado[df_filtrado['Pagado'] == True]['Monto'].sum()
+        saldo_pendiente = total_programado - total_pagado
 
         # Tarjetas KPI de resumen
         k1, k2, k3 = st.columns(3)
         with k1:
-            st.metric("🔴 TOTAL EGRESOS PROGRAMADOS", f"₡ {total_egresos:,.2f}", delta=filtro_tienda, delta_color="inverse")
+            st.metric("🔴 TOTAL PROGRAMADO", f"₡ {total_programado:,.2f}", delta=filtro_tienda, delta_color="inverse")
         with k2:
-            st.metric("📌 GASTOS FIJOS / OBLIGACIONES", f"₡ {total_fijos:,.2f}")
+            st.metric("✅ TOTAL PAGADO", f"₡ {total_pagado:,.2f}")
         with k3:
-            st.metric("⚡ GASTOS VARIABLES / OPERATIVOS", f"₡ {total_variables:,.2f}")
+            st.metric("⏳ SALDO PENDIENTE POR PAGAR", f"₡ {saldo_pendiente:,.2f}", delta=f"-₡ {total_pagado:,.2f} Pagados", delta_color="normal")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -224,21 +228,41 @@ def run():
         df_filtrado['Categoria_Display'] = df_filtrado['Categoria'].apply(mapear_icono_categoria)
         df_filtrado['Tipo_Display'] = df_filtrado['Tipo'].apply(lambda x: "🔴 Fijo" if x == "Fijo" else "⚡ Variable")
 
-        # Configuración visual de columnas en la tabla
-        st.dataframe(
-            df_filtrado[['id', 'Fecha Pago', 'Periodicidad', 'Mes', 'Tienda', 'Tipo_Display', 'Categoria_Display', 'Descripcion', 'Monto']],
+        st.caption("💡 Marca la casilla **'☑️ Pagado'** para registrar un egreso como saldado. El saldo pendiente se actualizará al guardar los cambios.")
+
+        # Data Editor interactivo con Checkbox
+        edited_df = st.data_editor(
+            df_filtrado[['id', 'Pagado', 'Fecha Pago', 'Periodicidad', 'Mes', 'Tienda', 'Tipo_Display', 'Categoria_Display', 'Descripcion', 'Monto']],
             column_config={
-                "id": st.column_config.NumberColumn("ID", format="%d"),
-                "Monto": st.column_config.NumberColumn("Monto (₡)", format="₡ %,.2f"),
-                "Fecha Pago": st.column_config.DateColumn("Fecha Correspondiente", format="YYYY-MM-DD"),
-                "Periodicidad": st.column_config.TextColumn("Frecuencia"),
-                "Tipo_Display": st.column_config.TextColumn("Tipo Gasto"),
-                "Categoria_Display": st.column_config.TextColumn("Categoría")
+                "id": st.column_config.NumberColumn("ID", format="%d", disabled=True),
+                "Pagado": st.column_config.CheckboxColumn("☑️ Pagado?", help="Marcar si el pago ya fue realizado"),
+                "Monto": st.column_config.NumberColumn("Monto (₡)", format="₡ %,.2f", disabled=True),
+                "Fecha Pago": st.column_config.DateColumn("Fecha Correspondiente", format="YYYY-MM-DD", disabled=True),
+                "Periodicidad": st.column_config.TextColumn("Frecuencia", disabled=True),
+                "Tipo_Display": st.column_config.TextColumn("Tipo Gasto", disabled=True),
+                "Categoria_Display": st.column_config.TextColumn("Categoría", disabled=True),
+                "Descripcion": st.column_config.TextColumn("Descripción", disabled=True),
+                "Tienda": st.column_config.TextColumn("Tienda", disabled=True),
+                "Mes": st.column_config.TextColumn("Mes", disabled=True)
             },
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            key="editor_pagos_obligaciones"
         )
-        
+
+        # Guardar cambios en el estado de 'Pagado'
+        if st.button("💾 Guardar Estado de Pagos", use_container_width=True):
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            for _, row in edited_df.iterrows():
+                p_val = 1 if row['Pagado'] else 0
+                r_id = row['id']
+                cursor.execute("UPDATE obligaciones SET pagado = ? WHERE id = ?", (p_val, r_id))
+            conn.commit()
+            conn.close()
+            st.success("¡Estado de pagos actualizado correctamente!")
+            st.rerun()
+
         st.markdown("---")
 
         # --- SECCIÓN DE EDICIÓN Y ELIMINACIÓN DE REGISTROS ---
@@ -251,12 +275,12 @@ def run():
             if id_a_editar > 0:
                 conn = sqlite3.connect(db_path)
                 cursor = conn.cursor()
-                cursor.execute("SELECT id, tienda, tipo_gasto, categoria, descripcion, monto, fecha_pago, periodicidad FROM obligaciones WHERE id = ?", (id_a_editar,))
+                cursor.execute("SELECT id, tienda, tipo_gasto, categoria, descripcion, monto, fecha_pago, periodicidad, pagado FROM obligaciones WHERE id = ?", (id_a_editar,))
                 row_edit = cursor.fetchone()
                 conn.close()
 
                 if row_edit:
-                    _, curr_tienda, curr_tipo, curr_cat, curr_desc, curr_monto, curr_fecha, curr_period = row_edit
+                    _, curr_tienda, curr_tipo, curr_cat, curr_desc, curr_monto, curr_fecha, curr_period, curr_pagado = row_edit
                     
                     try:
                         fecha_val = datetime.strptime(curr_fecha, "%Y-%m-%d").date() if curr_fecha else datetime.now().date()
@@ -272,6 +296,7 @@ def run():
                         new_period = st.selectbox("Periodicidad", ["Quincenal", "Mensual", "Trimestral (Q1 / Q2 / Q3 / Q4)", "Semestral", "Anual", "Pago Único"], index=["Quincenal", "Mensual", "Trimestral (Q1 / Q2 / Q3 / Q4)", "Semestral", "Anual", "Pago Único"].index(curr_period) if curr_period in ["Quincenal", "Mensual", "Trimestral (Q1 / Q2 / Q3 / Q4)", "Semestral", "Anual", "Pago Único"] else 1, key="edit_period")
                         new_desc = st.text_input("Descripción / Proveedor", value=curr_desc, key="edit_desc")
                         new_monto = st.number_input("Monto (₡)", min_value=0.0, value=float(curr_monto), step=5000.0, key="edit_monto")
+                        new_pagado_bool = st.checkbox("¿Marcado como Pagado?", value=True if curr_pagado == 1 else False, key="edit_pagado_cb")
 
                         submitted_update = st.form_submit_button("🔄 Actualizar Registro", use_container_width=True)
 
@@ -279,14 +304,15 @@ def run():
                             new_anio = new_fecha.year
                             new_mes = mapping_meses.get(new_fecha.month, 'enero')
                             new_fecha_str = new_fecha.strftime("%Y-%m-%d")
+                            new_pagado_val = 1 if new_pagado_bool else 0
 
                             conn = sqlite3.connect(db_path)
                             cursor = conn.cursor()
                             cursor.execute("""
                                 UPDATE obligaciones 
-                                SET anio = ?, mes = ?, tienda = ?, tipo_gasto = ?, categoria = ?, descripcion = ?, monto = ?, fecha_pago = ?, periodicidad = ?
+                                SET anio = ?, mes = ?, tienda = ?, tipo_gasto = ?, categoria = ?, descripcion = ?, monto = ?, fecha_pago = ?, periodicidad = ?, pagado = ?
                                 WHERE id = ?
-                            """, (new_anio, new_mes, new_tienda, new_tipo, new_cat, new_desc, new_monto, new_fecha_str, new_period, id_a_editar))
+                            """, (new_anio, new_mes, new_tienda, new_tipo, new_cat, new_desc, new_monto, new_fecha_str, new_period, new_pagado_val, id_a_editar))
                             conn.commit()
                             conn.close()
 
