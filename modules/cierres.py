@@ -31,7 +31,8 @@ def cargar_datos_cierres():
     """)
     conn.commit()
     
-    df = pd.read_sql_query("SELECT id, fecha, cajero, negocio, tarjeta_colones, efectivo_colones, colones, dolares, estado FROM cierres ORDER BY id DESC", conn)
+    # Ordenado por fecha de forma descendente para mostrar los días recientes primero
+    df = pd.read_sql_query("SELECT id, fecha, cajero, negocio, tarjeta_colones, efectivo_colones, colones, dolares, estado FROM cierres ORDER BY fecha DESC", conn)
     conn.close()
     return df
 
