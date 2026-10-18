@@ -16,7 +16,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilos CSS - Estética Clean SaaS / Modern Dashboard & Iconos Profesionales FontAwesome
+# Estilos CSS - Estética Clean SaaS / Modern Dashboard
 st.markdown("""
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -177,7 +177,7 @@ elif os.path.exists("logo.jpg"):
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 st.sidebar.markdown("### **Menú Principal**")
 
-# Opciones de menú con formato y vectores profesionales FontAwesome
+# Opciones de menú
 opcion = st.sidebar.radio(
     "Selecciona una opción:",
     [
