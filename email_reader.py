@@ -39,18 +39,50 @@ def init_db():
         )
     """)
     conn.commit()
-    
-    # Asegurar compatibilidad de columnas si la tabla ya existía
-    cursor.execute("PRAGMA table_info(cierres)")
-    columns = [column[1] for column in cursor.fetchall()]
-    
-    for col_name, col_type in [
-        ("cajero", "TEXT"), ("negocio", "TEXT"), ("colones", "REAL"), 
-        ("dolares", "REAL"), ("tarjeta_colones", "REAL"), 
-        ("efectivo_colones", "REAL"), ("estado", "TEXT")
-    ]:
-        if col_name not in columns:
-            cursor.execute(f"ALTER TABLE cierres ADD COLUMN {col_name} {col_type}")
+
+    # Cargar histórico del 1 al 15 de Octubre si aún no existe
+    historico_octubre = [
+        # --- Bravca Souvenir ---
+        ("2026-10-01", "Bravca Souvenir", 31900.00),
+        ("2026-10-02", "Bravca Souvenir", 6000.00),
+        ("2026-10-03", "Bravca Souvenir", 26550.00),
+        ("2026-10-04", "Bravca Souvenir", 56300.00),
+        ("2026-10-05", "Bravca Souvenir", 22320.00),
+        ("2026-10-06", "Bravca Souvenir", 120625.00),
+        ("2026-10-07", "Bravca Souvenir", 128260.00),
+        ("2026-10-08", "Bravca Souvenir", 51810.00),
+        ("2026-10-09", "Bravca Souvenir", 140625.00),
+        ("2026-10-10", "Bravca Souvenir", 35145.00),
+        ("2026-10-11", "Bravca Souvenir", 30060.00),
+        ("2026-10-12", "Bravca Souvenir", 81175.00),
+        ("2026-10-13", "Bravca Souvenir", 75100.00),
+        ("2026-10-14", "Bravca Souvenir", 104400.00),
+        ("2026-10-15", "Bravca Souvenir", 28200.00),
+        # --- Bravca Extremo ---
+        ("2026-10-01", "Bravca Extremo", 24120.00),
+        ("2026-10-02", "Bravca Extremo", 9050.00),
+        ("2026-10-03", "Bravca Extremo", 18920.00),
+        ("2026-10-04", "Bravca Extremo", 25020.00),
+        ("2026-10-05", "Bravca Extremo", 1200.00),
+        ("2026-10-06", "Bravca Extremo", 60240.00),
+        ("2026-10-07", "Bravca Extremo", 35040.00),
+        ("2026-10-08", "Bravca Extremo", 12575.00),
+        ("2026-10-09", "Bravca Extremo", 7650.00),
+        ("2026-10-10", "Bravca Extremo", 35900.00),
+        ("2026-10-11", "Bravca Extremo", 14500.00),
+        ("2026-10-12", "Bravca Extremo", 23900.00),
+        ("2026-10-13", "Bravca Extremo", 49710.00),
+        ("2026-10-14", "Bravca Extremo", 3500.00),
+        ("2026-10-15", "Bravca Extremo", 10600.00),
+    ]
+
+    for fecha_str, negocio_str, monto in historico_octubre:
+        cursor.execute("SELECT id FROM cierres WHERE fecha LIKE ? AND negocio = ?", (f"{fecha_str}%", negocio_str))
+        if not cursor.fetchone():
+            cursor.execute("""
+                INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
+                VALUES (?, ?, ?, ?, 0.0, 0.0, ?, ?)
+            """, (f"{fecha_str} 18:00", "Histórico Simplifica2", negocio_str, monto, monto, "Histórico Cargado"))
             conn.commit()
 
     conn.close()
@@ -75,7 +107,7 @@ def sincronizar_cierres_gmail():
             return False, "No se pudo acceder a la bandeja de entrada."
 
         email_ids = messages[0].split()
-        email_ids = email_ids[-15:] 
+        email_ids = email_ids[-20:] 
         registros_procesados = 0
 
         for e_id in email_ids:
@@ -138,13 +170,12 @@ def sincronizar_cierres_gmail():
                         tarjeta_colones = float(tarjeta_match.group(1).replace(",", "")) if tarjeta_match else 10000.0
                         efectivo_colones = float(efectivo_match.group(1).replace(",", "")) if efectivo_match else 32500.0
                         
-                        # Total general en colones
                         colones = tarjeta_colones + efectivo_colones
 
                         dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.\d{2})", full_content)
                         dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 0.0
 
-                        # Guardar o actualizar en la base de datos
+                        # Guardar o actualizar
                         cursor.execute("SELECT id FROM cierres WHERE fecha = ? AND cajero = ?", (fecha, cajero))
                         row = cursor.fetchone()
                         
@@ -165,8 +196,8 @@ def sincronizar_cierres_gmail():
 
         mail.logout()
         conn.close()
-        return True, f"Sincronización exitosa. Se procesaron {registros_procesados} cierres con desglose."
+        return True, f"Base de datos actualizada con éxito (Histórico Oct 1-15 + Cierres Gmail)."
 
     except Exception as e:
         conn.close()
-        return False, f"Error de conexión IMAP: {str(e)}"
+        return False, f"Error de conexión: {str(e)}"
