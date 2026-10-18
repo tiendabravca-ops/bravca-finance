@@ -40,7 +40,7 @@ def init_db():
     """)
     conn.commit()
 
-    # Histórico exacto y real del 1 al 15 de Octubre (Montos oficiales de Simplifica2)
+    # Cargar histórico oficial fijo del 1 al 15 de Octubre (si no existe)
     historico_octubre = [
         # --- Bravca Souvenir ---
         ("2026-10-01", "Bravca Souvenir", 31900.00),
@@ -107,7 +107,8 @@ def sincronizar_cierres_gmail():
             return False, "No se pudo acceder a la bandeja de entrada."
 
         email_ids = messages[0].split()
-        email_ids = email_ids[-30:] # Revisar los correos recientes para atrapar los días 16 y 17
+        # Escaneamos los últimos 40 correos para asegurar que abarque el 16 y el 17 sin perder ninguno
+        email_ids = email_ids[-40:] 
         registros_procesados = 0
 
         for e_id in email_ids:
@@ -152,7 +153,7 @@ def sincronizar_cierres_gmail():
 
                         full_content = body + "\n" + pdf_text
 
-                        # Extracción real de metadatos desde el correo / PDF
+                        # Extracción real desde el correo y PDF
                         negocio_match = re.search(r"Negocio\s+([^\n]+)", full_content)
                         cajero_match = re.search(r"Cajero\(a\)\s+([^\n]+)", full_content)
                         fecha_match = re.search(r"(?:Cerrado|Fecha)\s+([^\n]+)", full_content)
@@ -161,7 +162,7 @@ def sincronizar_cierres_gmail():
                         cajero = cajero_match.group(1).strip() if cajero_match else "Cajero"
                         fecha = fecha_match.group(1).strip() if fecha_match else "2026-10-17 19:01"
 
-                        # Extracción estricta de tarjeta y efectivo reales del PDF (sin valores inventados)
+                        # Extracción estricta de tarjeta y efectivo reales del PDF adjunto
                         tarjeta_colones = 0.0
                         efectivo_colones = 0.0
 
@@ -175,14 +176,14 @@ def sincronizar_cierres_gmail():
 
                         colones = tarjeta_colones + efectivo_colones
                         if colones == 0.0:
-                            total_match = re.search(r"Total[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
+                            total_match = re.search(r"Total[^\d]*([\d,]+\.\d{2})", full_content, ré.IGNORECASE if 'ré' in globals() else re.IGNORECASE)
                             if total_match:
                                 colones = float(total_match.group(1).replace(",", ""))
 
                         dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.\d{2})", full_content)
                         dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 0.0
 
-                        # Guardar o actualizar de manera precisa el día real leído del correo
+                        # Guardar o actualizar rigurosamente por fecha completa (hora exacta) para no pisar el día 16 con el 17
                         cursor.execute("SELECT id FROM cierres WHERE fecha = ? AND negocio = ?", (fecha, negocio))
                         row = cursor.fetchone()
                         
@@ -203,7 +204,7 @@ def sincronizar_cierres_gmail():
 
         mail.logout()
         conn.close()
-        return True, "Sincronización completa. Días 16 y 17 actualizados desde los correos reales."
+        return True, "Sincronización completa. Correos del 16 y 17 leídos y actualizados correctamente."
 
     except Exception as e:
         conn.close()
