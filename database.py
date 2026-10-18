@@ -4,13 +4,7 @@ import os
 def init_db():
     db_path = 'bravca.db'
     
-    # Si la base de datos ya existe, la eliminamos para asegurar una recreación limpia
-    if os.path.exists(db_path):
-        try:
-            os.remove(db_path)
-        except Exception as e:
-            print(f"Nota al eliminar base de datos anterior: {e}")
-
+    # Si la base de datos ya existe, se mantiene o elimina según flujo
     conn = sqlite3.connect(db_path, timeout=10.0)
     cursor = conn.cursor()
 
@@ -98,9 +92,34 @@ def init_db():
         )
     ''')
 
+    # --- TABLAS DE RECURSOS HUMANOS ---
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS colaboradores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            tienda TEXT NOT NULL,
+            puesto TEXT NOT NULL,
+            salario_base REAL NOT NULL,
+            fecha_ingreso TEXT NOT NULL,
+            estado TEXT DEFAULT 'Activo'
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS movimientos_rrhh (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            colaborador_id INTEGER,
+            tipo TEXT NOT NULL,
+            monto REAL NOT NULL,
+            fecha TEXT NOT NULL,
+            nota TEXT,
+            FOREIGN KEY (colaborador_id) REFERENCES colaboradores (id)
+        )
+    ''')
+
     # Datos oficiales completos del año 2025 para ambas tiendas
     datos_oficiales_2025 = [
-        # --- SANTA ELENA (Venta Real 2025, Meta Real 2025) ---
+        # --- SANTA ELENA ---
         ("Santa Elena", "enero", 5609058.0, 6402917.0),
         ("Santa Elena", "febrero", 5858674.0, 6249901.0),
         ("Santa Elena", "marzo", 6563325.0, 7219657.0),
@@ -114,7 +133,7 @@ def init_db():
         ("Santa Elena", "noviembre", 4995976.0, 5495573.0),
         ("Santa Elena", "diciembre", 6451352.0, 7096487.0),
         
-        # --- MONTEVERDE EXTREMO (Venta Real 2025, Meta Real 2025) ---
+        # --- MONTEVERDE EXTREMO ---
         ("Monteverde Extremo", "enero", 3996723.0, 4396395.0),
         ("Monteverde Extremo", "febrero", 3849065.0, 4233971.0),
         ("Monteverde Extremo", "marzo", 3948468.0, 4343314.0),
@@ -137,7 +156,6 @@ def init_db():
 
     conn.commit()
     conn.close()
-    print("-> ¡Base de datos 'bravca.db' recreada y cargada exitosamente al 100%!")
 
 def cargar_ventas_octubre_simplifica2():
     pass
