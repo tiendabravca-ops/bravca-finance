@@ -5,17 +5,75 @@ import plotly.express as px
 from datetime import datetime
 import os
 
-def run():
-    st.markdown("##### 🏦 CONSOLIDADO DE FONDOS, RESERVAS Y CRONOGRAMA")
+def obtener_metas_desde_obligaciones(anio, mes_nombre):
+    """Consulta la base de datos de obligaciones para sumar dinámicamente las metas ideales de cada sobre."""
+    db_path = "data/sistema_financiero.db"
     
-    # Conexión directa a nuestra base de datos consolidada de cierres
-    db_path = "db_cierres.db"
+    metas = {
+        'reserva': 1000000.0,
+        'salarios': 0.0,
+        'alquiler': 0.0,
+        'tarjeta': 0.0,
+        'proveedores': 0.0
+    }
     
-    df_ventas = pd.DataFrame()
+    obligaciones_lista = []
+
     if os.path.exists(db_path):
         try:
-            conn = sqlite3.connect(db_path, timeout=10.0)
-            # Consultamos la tabla oficial 'cierres' donde se guardan los datos reales y el histórico
+            conn = sqlite3.connect(db_path)
+            query = "SELECT id, categoria, descripcion, monto, fecha_pago, tienda, pagado FROM obligaciones WHERE anio = ? AND LOWER(mes) = ?"
+            df_obs = pd.read_sql_query(query, conn, params=(anio, mes_nombre.lower()))
+            conn.close()
+
+            if not df_obs.empty:
+                for _, row in df_obs.iterrows():
+                    cat = str(row['categoria']).lower()
+                    monto = float(row['monto']) if row['monto'] else 0.0
+                    
+                    if 'planilla' in cat or 'salario' in cat:
+                        metas['salarios'] += monto
+                    elif 'alquiler' in cat:
+                        metas['alquiler'] += monto
+                    elif 'tarjeta' in cat or 'prestamo' in cat or 'financiamiento' in cat or 'impuesto' in cat or 'contabilidad' in cat:
+                        metas['tarjeta'] += monto
+                    elif 'proveedor' in cat or 'mercaderia' in cat or 'insumo' in cat:
+                        metas['proveedores'] += monto
+                    else:
+                        metas['reserva'] += monto
+                        
+                obligaciones_lista = df_obs.to_dict('records')
+        except Exception:
+            pass
+
+    # Asegurar valores mínimos si aún no hay registros
+    if metas['salarios'] == 0: metas['salarios'] = 1500000.0
+    if metas['alquiler'] == 0: metas['alquiler'] = 860000.0
+    if metas['tarjeta'] == 0: metas['tarjeta'] = 500000.0
+    if metas['proveedores'] == 0: metas['proveedores'] = 1500000.0
+
+    return metas, obligaciones_lista
+
+def run():
+    st.markdown("##### 🏦 CONSOLIDADO DE FONDOS, RESERVAS Y CRONOGRAMA OPERATIVO")
+    
+    db_path_cierres = "db_cierres.db"
+    hoy = datetime.now()
+    anio_curr = hoy.year
+    mes_num_curr = hoy.month
+    
+    mapping_meses = {
+        1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
+        5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto',
+        9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
+    }
+    mes_nombre_curr = mapping_meses.get(mes_num_curr, 'octubre')
+
+    # Lectura de ventas reales desde db_cierres.db
+    df_ventas = pd.DataFrame()
+    if os.path.exists(db_path_cierres):
+        try:
+            conn = sqlite3.connect(db_path_cierres, timeout=10.0)
             df_ventas = pd.read_sql_query("SELECT negocio as tienda, fecha as fecha_cierre, colones as efectivo_cobrado FROM cierres", conn)
             conn.close()
         except Exception:
@@ -25,97 +83,53 @@ def run():
     
     if not df_ventas.empty:
         df_ventas['monto'] = pd.to_numeric(df_ventas['efectivo_cobrado'], errors='coerce').fillna(0)
-        
-        # Filtramos estrictamente el mes de octubre de 2026
         df_ventas['fecha_dt'] = pd.to_datetime(df_ventas['fecha_cierre'], errors='coerce')
-        df_octubre = df_ventas[(df_ventas['fecha_dt'].dt.year == 2026) & (df_ventas['fecha_dt'].dt.month == 10)].copy()
         
-        if not df_octubre.empty:
-            total_mes = df_octubre['monto'].sum()
-            df_octubre['dia'] = df_octubre['fecha_dt'].dt.day
+        df_mes_actual = df_ventas[(df_ventas['fecha_dt'].dt.year == anio_curr) & (df_ventas['fecha_dt'].dt.month == mes_num_curr)].copy()
+        
+        if not df_mes_actual.empty:
+            total_mes = df_mes_actual['monto'].sum()
+            df_mes_actual['dia'] = df_mes_actual['fecha_dt'].dt.day
             
-            v_1_10 = df_octubre[(df_octubre['dia'] >= 1) & (df_octubre['dia'] <= 10)]['monto'].sum()
-            v_11_20 = df_octubre[(df_octubre['dia'] >= 11) & (df_octubre['dia'] <= 20)]['monto'].sum()
-            v_21_31 = df_octubre[(df_octubre['dia'] >= 21)]['monto'].sum()
+            v_1_10 = df_mes_actual[(df_mes_actual['dia'] >= 1) & (df_mes_actual['dia'] <= 10)]['monto'].sum()
+            v_11_20 = df_mes_actual[(df_mes_actual['dia'] >= 11) & (df_mes_actual['dia'] <= 20)]['monto'].sum()
+            v_21_31 = df_mes_actual[(df_mes_actual['dia'] >= 21)]['monto'].sum()
+
+    # Consolidación dinámica con la base de datos de Obligaciones
+    metas_dinamicas, lista_obs = obtener_metas_desde_obligaciones(anio_curr, mes_nombre_curr)
 
     tab_sobres, tab_gantt = st.tabs(["📦 Asignación Automática por Sobres", "📊 Cronograma Operativo (Flujo de Caja)"])
     
     with tab_sobres:
-        st.markdown("###### **Distribución Automática por Bloques Operativos (Ambas Tiendas)**")
-        st.caption("Los montos logrados suman las ventas combinadas de Santa Elena y Monteverde Extremo desde la base de datos de cierres.")
+        st.markdown(f"###### **Distribución Automática por Bloques Operativos — {mes_nombre_curr.capitalize()} {anio_curr}**")
+        st.caption("Los montos de Meta Ideal se recalculan automáticamente con base en las obligaciones registradas.")
         
         datos_sobres = [
-            {"nombre_fondo": "FONDO DE EMERGENCIA (Días 1-10)", "monto_meta_colones": 1000000.0, "monto_logrado_colones": v_1_10, "prioridad": 1},
-            {"nombre_fondo": "ROTATIVO DE COMPRAS + SALARIOS", "monto_meta_colones": 1500000.0, "monto_logrado_colones": v_11_20 * 0.5, "prioridad": 2},
-            {"nombre_fondo": "ALQUILER TIENDA 1 (Santa Elena)", "monto_meta_colones": 600000.0, "monto_logrado_colones": v_11_20 * 0.5, "prioridad": 3},
-            {"nombre_fondo": "PAGO TARJETA CORPORATIVA", "monto_meta_colones": 500000.0, "monto_logrado_colones": v_21_31 * 0.4, "prioridad": 4},
-            {"nombre_fondo": "FACTURAS CRÉDITO + PROVEEDORES", "monto_meta_colones": 2000000.0, "monto_logrado_colones": v_21_31 * 0.6, "prioridad": 5}
+            {"nombre_fondo": "FONDO DE EMERGENCIA (Días 1-10)", "monto_meta_colones": metas_dinamicas['reserva'], "monto_logrado_colones": v_1_10, "prioridad": 1},
+            {"nombre_fondo": "ROTATIVO DE COMPRAS + SALARIOS", "monto_meta_colones": metas_dinamicas['salarios'], "monto_logrado_colones": v_11_20 * 0.5, "prioridad": 2},
+            {"nombre_fondo": "ALQUILER TIENDAS (Santa Elena & Extremo)", "monto_meta_colones": metas_dinamicas['alquiler'], "monto_logrado_colones": v_11_20 * 0.5, "prioridad": 3},
+            {"nombre_fondo": "PAGO TARJETA / IMPUESTOS / PROFESIONALES", "monto_meta_colones": metas_dinamicas['tarjeta'], "monto_logrado_colones": v_21_31 * 0.4, "prioridad": 4},
+            {"nombre_fondo": "FACTURAS CRÉDITO + PROVEEDORES", "monto_meta_colones": metas_dinamicas['proveedores'], "monto_logrado_colones": v_21_31 * 0.6, "prioridad": 5}
         ]
         
         df_display = pd.DataFrame(datos_sobres)
-        
         total_meta = df_display["monto_meta_colones"].sum()
         total_logrado = df_display["monto_logrado_colones"].sum()
         cumplimiento = (total_logrado / total_meta * 100) if total_meta > 0 else 0
         
-        # --- TARJETAS PRO ESTILO FINTECH ---
-        st.markdown("""
-            <style>
-            .pro-card {
-                background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-                border-left: 5px solid #2C5E3B;
-                padding: 15px 20px;
-                border-radius: 8px;
-                box-shadow: 0 2px 6px rgba(0,0,0,0.05);
-                margin-bottom: 15px;
-            }
-            .pro-card-title {
-                font-size: 0.85rem;
-                text-transform: uppercase;
-                color: #6c757d;
-                font-weight: 700;
-                letter-spacing: 0.5px;
-            }
-            .pro-card-value {
-                font-size: 1.5rem;
-                font-weight: 800;
-                color: #1c2826;
-                margin-top: 5px;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-
+        # Tarjetas de Resumen Global
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.markdown(f"""
-                <div class="pro-card" style="border-left-color: #3b82f6;">
-                    <div class="pro-card-title">Meta Global Sobres</div>
-                    <div class="pro-card-value">₡ {total_meta:,.0f}</div>
-                </div>
-            """, unsafe_allow_html=True)
+            st.metric("META GLOBAL SOBRES", f"₡ {total_meta:,.0f}")
         with col2:
-            st.markdown(f"""
-                <div class="pro-card" style="border-left-color: #10b981;">
-                    <div class="pro-card-title">Total Logrado Real</div>
-                    <div class="pro-card-value">₡ {total_logrado:,.0f}</div>
-                </div>
-            """, unsafe_allow_html=True)
+            st.metric("TOTAL LOGRADO REAL", f"₡ {total_logrado:,.0f}")
         with col3:
-            st.markdown(f"""
-                <div class="pro-card" style="border-left-color: #f59e0b;">
-                    <div class="pro-card-title">% Cumplimiento</div>
-                    <div class="pro-card-value">{cumplimiento:.1f}%</div>
-                </div>
-            """, unsafe_allow_html=True)
+            st.metric("% CUMPLIMIENTO", f"{cumplimiento:.1f}%")
         with col4:
-            st.markdown(f"""
-                <div class="pro-card" style="border-left-color: #8b5cf6;">
-                    <div class="pro-card-title">Ventas Tiendas (Total)</div>
-                    <div class="pro-card-value">₡ {total_mes:,.0f}</div>
-                </div>
-            """, unsafe_allow_html=True)
+            st.metric("VENTAS TIENDAS (TOTAL)", f"₡ {total_mes:,.0f}")
 
-        # Fila de totales en la tabla
+        st.markdown("<br>", unsafe_allow_html=True)
+
         fila_total = pd.DataFrame([{
             "nombre_fondo": "📌 TOTALES GENERALES",
             "monto_meta_colones": total_meta,
@@ -138,19 +152,32 @@ def run():
         )
 
     with tab_gantt:
-        st.markdown("###### **Cronograma de Flujo de Efectivo (Ciclo Operativo del Mes)**")
-        st.caption("Distribución cronológica basada en los bloques operativos reales.")
+        st.markdown("###### **Cronograma de Flujo de Efectivo (Sincronizado con Obligaciones)**")
         
-        hoy = datetime.now()
-        anio, mes = hoy.year, hoy.month
+        datos_ciclo = []
+        if lista_obs:
+            for obs in lista_obs:
+                f_pago = obs.get('fecha_pago')
+                if not f_pago:
+                    f_pago = f"{anio_curr}-{mes_num_curr:02d}-15"
+                
+                estado = "✅ Pagado" if obs.get('pagado') == 1 else "⏳ Pendiente"
+                
+                datos_ciclo.append({
+                    "Actividad": f"{obs['descripcion']} ({obs['tienda']})",
+                    "Inicio": f_pago,
+                    "Fin": f_pago,
+                    "Bloque": obs['categoria'],
+                    "Monto": obs['monto'],
+                    "Estado": estado
+                })
         
-        datos_ciclo = [
-            {"Actividad": "Fondo de Emergencia (Intocable)", "Inicio": f"{anio}-{mes:02d}-01", "Fin": f"{anio}-{mes:02d}-10", "Bloque": "1. Días 1-10 (Reserva)", "Monto": v_1_10},
-            {"Actividad": "Salarios 1ra Quincena", "Inicio": f"{anio}-{mes:02d}-11", "Fin": f"{anio}-{mes:02d}-13", "Bloque": "2. Días 11-13 (Salarios)", "Monto": v_11_20 * 0.3},
-            {"Actividad": "Alquiler Tienda Santa Elena", "Inicio": f"{anio}-{mes:02d}-14", "Fin": f"{anio}-{mes:02d}-17", "Bloque": "3. Días 14-17 (Alquiler)", "Monto": v_11_20 * 0.3},
-            {"Actividad": "Pago Tarjeta de Crédito", "Inicio": f"{anio}-{mes:02d}-18", "Fin": f"{anio}-{mes:02d}-20", "Bloque": "4. Días 18-20 (Tarjeta)", "Monto": v_21_31 * 0.4},
-            {"Actividad": "Proveedores / Facturas Crédito", "Inicio": f"{anio}-{mes:02d}-21", "Fin": f"{anio}-{mes:02d}-30", "Bloque": "5. Días 21-30 (Proveedores)", "Monto": v_21_31 * 0.6}
-        ]
+        if not datos_ciclo:
+            datos_ciclo = [
+                {"Actividad": "Fondo de Emergencia (Intocable)", "Inicio": f"{anio_curr}-{mes_num_curr:02d}-01", "Fin": f"{anio_curr}-{mes_num_curr:02d}-10", "Bloque": "Reserva", "Monto": v_1_10, "Estado": "Pendiente"},
+                {"Actividad": "Salarios 1ra Quincena", "Inicio": f"{anio_curr}-{mes_num_curr:02d}-11", "Fin": f"{anio_curr}-{mes_num_curr:02d}-13", "Bloque": "Planilla", "Monto": v_11_20 * 0.3, "Estado": "Pendiente"},
+                {"Actividad": "Alquiler Santa Elena", "Inicio": f"{anio_curr}-{mes_num_curr:02d}-14", "Fin": f"{anio_curr}-{mes_num_curr:02d}-17", "Bloque": "Alquileres", "Monto": v_11_20 * 0.3, "Estado": "Pendiente"}
+            ]
         
         df_gantt = pd.DataFrame(datos_ciclo)
 
@@ -160,12 +187,8 @@ def run():
             x_end="Fin",
             y="Actividad",
             color="Bloque",
-            hover_data=["Monto"],
-            labels={
-                "Actividad": "Fase Operativa", 
-                "Inicio": "Fecha",
-                "Bloque": "Bloque de Pago"
-            }
+            hover_data=["Monto", "Estado"],
+            labels={"Actividad": "Compromiso Operativo", "Inicio": "Fecha de Pago"}
         )
         
         fig.update_yaxes(autorange="reversed")
