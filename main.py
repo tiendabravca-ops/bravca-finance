@@ -1,6 +1,5 @@
 import streamlit as st
 import os
-from PIL import Image
 import database
 import modules.dashboard as dash
 import modules.proyecciones as proj
@@ -36,7 +35,7 @@ st.markdown("""
     [data-testid="stSidebar"] {
         background-color: #102A43 !important;
         border-right: none !important;
-        padding-top: 15px;
+        padding-top: 25px;
     }
     [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
         color: #FFFFFF !important;
@@ -55,25 +54,6 @@ st.markdown("""
     div[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
         background-color: rgba(245, 166, 35, 0.2);
         color: #F5A623 !important;
-    }
-
-    /* Estilo elegante para el expander del logo (efecto tarjeta flotante) */
-    [data-testid="stSidebar"] div[data-testid="stExpander"] {
-        background-color: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 16px;
-        padding: 4px;
-        margin-bottom: 20px;
-        transition: all 0.2s ease;
-    }
-    [data-testid="stSidebar"] div[data-testid="stExpander"]:hover {
-        border-color: #F5A623;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    }
-    [data-testid="stSidebar"] div[data-testid="stExpander"] summary p {
-        font-size: 0.8rem !important;
-        color: #F5A623 !important;
-        font-weight: 700 !important;
     }
 
     /* 4. Tarjetas KPIs tipo Clean Card con sombra flotante */
@@ -181,30 +161,8 @@ database.init_db()
 database.cargar_ventas_octubre_simplifica2()
 database.auto_generar_gastos_fijos()
 
-# --- SECCIÓN DE LOGO INTERACTIVO EN BARRA LATERAL ---
-with st.sidebar.expander("🖼️ [ Click para cambiar Logo ]", expanded=False):
-    if os.path.exists("logo.png"):
-        st.image("logo.png", use_container_width=True)
-    elif os.path.exists("logo.jpg"):
-        st.image("logo.jpg", use_container_width=True)
-        
-    uploaded_logo = st.file_uploader("Sube nueva imagen (PNG/JPG)", type=["png", "jpg", "jpeg"], key="uploader_tarjeta")
-    if uploaded_logo is not None:
-        image = Image.open(uploaded_logo)
-        image.save("logo.png")
-        st.success("¡Logo actualizado con éxito!")
-        st.rerun()
-
-# Si el expander está cerrado, mostramos el logo de forma limpia y directa arriba del menú
-if not st.session_state.get("stSidebar_expander", False): # Estándar visual limpio
-    if os.path.exists("logo.png"):
-        st.sidebar.image("logo.png", use_container_width=True)
-    elif os.path.exists("logo.jpg"):
-        st.sidebar.image("logo.jpg", use_container_width=True)
-
-st.sidebar.markdown("<br>", unsafe_allow_html=True)
+# --- MENÚ LATERAL LIMPIO ---
 st.sidebar.markdown("### **Menú Principal**")
-
 opcion = st.sidebar.radio(
     "Selecciona una opción:",
     [
@@ -219,17 +177,9 @@ opcion = st.sidebar.radio(
     label_visibility="collapsed"
 )
 
-# Encabezado visual de la aplicación principal
-col_logo, col_header = st.columns([1, 5])
-with col_logo:
-    if os.path.exists("logo.png"):
-        st.image("logo.png", width=80)
-    elif os.path.exists("logo.jpg"):
-        st.image("logo.jpg", width=80)
-
-with col_header:
-    st.markdown('<div class="brand-title">bráˇca souvenir</div>', unsafe_allow_html=True)
-    st.markdown('<div class="brand-sub">SISTEMA FINANCIERO & TESORERÍA • SANTA ELENA | MONTEVERDE EXTREMO</div>', unsafe_allow_html=True)
+# Encabezado visual principal (sin logo, limpio y ejecutivo)
+st.markdown('<div class="brand-title">bráˇca souvenir</div>', unsafe_allow_html=True)
+st.markdown('<div class="brand-sub">SISTEMA FINANCIERO & TESORERÍA • SANTA ELENA | MONTEVERDE EXTREMO</div>', unsafe_allow_html=True)
 
 # Enrutador de módulos
 if opcion == "📊 Dashboard Consolidado":
