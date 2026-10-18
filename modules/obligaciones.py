@@ -210,16 +210,26 @@ def run():
 
         # Cálculo de totales dinámicos
         total_programado = df_filtrado['Monto'].sum()
+        total_fijos = df_filtrado[df_filtrado['Tipo'] == 'Fijo']['Monto'].sum()
+        total_variables = df_filtrado[df_filtrado['Tipo'] == 'Variable']['Monto'].sum()
+        
         total_pagado = df_filtrado[df_filtrado['Pagado'] == True]['Monto'].sum()
         saldo_pendiente = total_programado - total_pagado
 
-        # Tarjetas KPI de resumen
+        # Fila 1: Resumen por Tipo de Gasto
         k1, k2, k3 = st.columns(3)
         with k1:
             st.metric("🔴 TOTAL PROGRAMADO", f"₡ {total_programado:,.2f}", delta=filtro_tienda, delta_color="inverse")
         with k2:
-            st.metric("✅ TOTAL PAGADO", f"₡ {total_pagado:,.2f}")
+            st.metric("📌 GASTOS FIJOS / OBLIGACIONES", f"₡ {total_fijos:,.2f}")
         with k3:
+            st.metric("⚡ GASTOS VARIABLES / OPERATIVOS", f"₡ {total_variables:,.2f}")
+
+        # Fila 2: Resumen de Control de Ejecución (Pagados vs Pendientes)
+        p1, p2 = st.columns(2)
+        with p1:
+            st.metric("✅ TOTAL PAGADO", f"₡ {total_pagado:,.2f}")
+        with p2:
             st.metric("⏳ SALDO PENDIENTE POR PAGAR", f"₡ {saldo_pendiente:,.2f}", delta=f"-₡ {total_pagado:,.2f} Pagados", delta_color="normal")
 
         st.markdown("<br>", unsafe_allow_html=True)
