@@ -65,8 +65,8 @@ def run():
                 tienda = st.selectbox("Tienda / Destino", ["Consolidado (Ambas Tiendas)", "Santa Elena", "Monteverde Extremo"], key="fijo_tienda")
             with c2:
                 categoria = st.selectbox("Categoría", [
+                    "Planilla / Salarios", 
                     "Alquileres", 
-                    "Planilla", 
                     "Impuestos Municipales / Patente", 
                     "Contabilidad / Servicios Profesionales", 
                     "Servicios Públicos", 
@@ -74,6 +74,7 @@ def run():
                     "Otros Fijos"
                 ], key="fijo_cat")
                 periodicidad = st.selectbox("Periodicidad de Pago", [
+                    "Quincenal",
                     "Mensual", 
                     "Trimestral (Q1 / Q2 / Q3 / Q4)", 
                     "Semestral", 
@@ -123,6 +124,7 @@ def run():
                 ], key="var_cat")
                 periodicidad_v = st.selectbox("Periodicidad de Pago", [
                     "Pago Único", 
+                    "Quincenal",
                     "Mensual", 
                     "Trimestral (Q1 / Q2 / Q3 / Q4)"
                 ], key="var_period")
@@ -222,4 +224,4 @@ def run():
                     st.success(f"Registro con ID {id_a_borrar} eliminado correctamente.")
                     st.rerun()
     else:
-        st.info("Aún no hay egresos registrados en la base de datos para 2026. Utiliza los formularios superiores para programar tus pagos fijos, trimestrales y variables.")
+        st.info("Aún no hay egresos registrados en la base de datos para 2026. Utiliza los formularios superiores para programar tus pagos fijos, quincenales, trimestrales y variables.")
