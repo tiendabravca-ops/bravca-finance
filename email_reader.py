@@ -82,7 +82,7 @@ def init_db():
             cursor.execute("""
                 INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
                 VALUES (?, ?, ?, ?, 0.0, 0.0, ?, ?)
-            """, (f"{fecha_str} 18:00", "Histórico Simplifica2", negocio_str, monto, monto, "Histórico Cargado"))
+            """, (f"{fecha_str} 18:00:00", "Histórico Simplifica2", negocio_str, monto, monto, "Histórico Cargado"))
             conn.commit()
 
     conn.close()
@@ -161,7 +161,7 @@ def sincronizar_cierres_gmail():
                         cajero = cajero_match.group(1).strip() if cajero_match else "Leonardo Venegas Mejías"
                         fecha = fecha_match.group(1).strip() if fecha_match else "2026-10-16 18:46"
 
-                        # Extracción precisa de Tarjeta y Efectivo desde el PDF
+                        # Extracción de Tarjeta y Efectivo desde el PDF
                         tarjeta_match = re.search(r"Tarjeta\s*[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
                         efectivo_match = re.search(r"Efectivo\s*cobrado\s*[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
                         if not efectivo_match:
@@ -196,7 +196,7 @@ def sincronizar_cierres_gmail():
 
         mail.logout()
         conn.close()
-        return True, f"Base de datos actualizada con éxito (Histórico Oct 1-15 + Cierres Gmail)."
+        return True, "Sincronización completa. Datos históricos de Octubre (1-15) cargados y cierres sincronizados."
 
     except Exception as e:
         conn.close()
