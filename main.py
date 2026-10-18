@@ -13,103 +13,132 @@ st.set_page_config(
     page_title="brá'ca Financial Core", 
     page_icon="🌿", 
     layout="wide",
-    initial_sidebar_state="collapsed"  # <--- Colapsado por defecto para vista móvil (sándwich ☰)
+    initial_sidebar_state="collapsed"  # Colapsado por defecto para vista móvil (sándwich ☰)
 )
 
-# Estilos CSS - Paleta Oficial brá'ca Souvenir (Optimizado para legibilidad móvil)
+# Estilos CSS - Paleta Estilo Binance / Nexo Pro Dark Mode
 st.markdown("""
     <style>
-    /* Estilo Base y Texto */
+    /* 1. Fondo Principal Pro Dark */
     .stApp {
-        background-color: #F7F5F0;
-        color: #0D1F0D !important;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        background-color: #0B0E11 !important;
+        color: #EAECSF !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
     }
     
-    /* Asegurar alto contraste en todos los elementos de texto de Streamlit */
+    /* 2. Regla General de Texto Oscuro / Claro */
     p, span, label, .stMarkdown, div {
-        color: #0D1F0D !important;
+        color: #EAECSF;
     }
 
-    /* Barra Lateral / Menú Sándwich */
+    /* 3. Menú Lateral / Sidebar estilo Crypto Terminal */
     [data-testid="stSidebar"] {
-        background-color: #EFECE6 !important;
-        border-right: 1px solid #DCD7CE;
+        background-color: #12161C !important;
+        border-right: 1px solid #2B313A !important;
     }
     [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
-        color: #1E3F20 !important;
+        color: #848E9C !important;
         font-weight: 600;
     }
+    
+    /* Estilo del Selector Radio en Sidebar */
+    div[data-testid="stSidebar"] div[role="radiogroup"] > label {
+        background-color: #181A20;
+        border: 1px solid #2B313A;
+        border-radius: 8px;
+        padding: 8px 12px;
+        margin-bottom: 6px;
+        transition: all 0.2s ease;
+    }
+    div[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
+        border-color: #F0B90B;
+        color: #F0B90B !important;
+    }
 
-    /* Tarjetas y Métricas */
+    /* 4. Tarjetas KPIs Binance / Nexo Style */
     .brabca-card {
-        background-color: #FFFFFF;
-        border: 1px solid #D1CDC4;
-        border-radius: 14px;
-        padding: 16px 20px;
-        box-shadow: 0 4px 12px rgba(30, 63, 32, 0.08);
+        background-color: #181A20 !important;
+        border: 1px solid #2B313A !important;
+        border-radius: 12px;
+        padding: 18px 20px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
         margin-bottom: 12px;
+        transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    .brabca-card:hover {
+        border-color: #F0B90B !important;
+        transform: translateY(-2px);
     }
     .card-label {
-        font-size: 0.85rem;
+        font-size: 0.8rem;
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 1px;
-        color: #33443E !important;
+        color: #848E9C !important;
         margin-bottom: 6px;
     }
     .card-value {
         font-size: 2rem;
         font-weight: 900;
-        color: #1E3F20 !important;
+        color: #0ECB81 !important; /* Verde Ganancia Binance */
         letter-spacing: -0.5px;
     }
     .card-value-alert {
         font-size: 2rem;
         font-weight: 900;
-        color: #B33919 !important;
+        color: #F6465D !important; /* Rojo Bajista Binance */
         letter-spacing: -0.5px;
     }
     .card-value-gold {
         font-size: 2rem;
         font-weight: 900;
-        color: #B85B00 !important;
+        color: #F0B90B !important; /* Dorado Binance */
         letter-spacing: -0.5px;
     }
 
-    /* Encabezado Principal */
+    /* 5. Encabezado Principal */
     .brand-title {
         font-size: 2.2rem;
         font-weight: 900;
-        color: #1E3F20 !important;
+        color: #FFFFFF !important;
         letter-spacing: -1px;
         margin-bottom: 2px;
     }
     .brand-sub {
         font-size: 0.85rem;
         font-weight: 700;
-        color: #B85B00 !important;
+        color: #F0B90B !important;
         letter-spacing: 1.5px;
         text-transform: uppercase;
         margin-bottom: 20px;
     }
 
-    /* Botones Legibles */
+    /* 6. Botones Pro Crypto */
     .stButton>button {
-        background-color: #1E3F20 !important;
-        color: #FFFFFF !important;
-        border-radius: 10px;
-        border: none;
-        padding: 8px 16px;
-        font-weight: 700;
+        background: linear-gradient(135deg, #F0B90B 0%, #D4A007 100%) !important;
+        color: #0B0E11 !important;
+        border-radius: 8px !important;
+        border: none !important;
+        padding: 10px 18px !important;
+        font-weight: 800 !important;
         width: 100%;
+        box-shadow: 0 2px 8px rgba(240, 185, 11, 0.2);
+        transition: all 0.2s ease !important;
     }
     .stButton>button:hover {
-        background-color: #2D5A27 !important;
-        color: #FFFFFF !important;
+        background: linear-gradient(135deg, #FFC81A 0%, #F0B90B 100%) !important;
+        color: #000000 !important;
+        box-shadow: 0 0 12px rgba(240, 185, 11, 0.5) !important;
     }
 
-    /* Ajustes para pantallas pequeñas */
+    /* 7. Tablas y Dataframes */
+    [data-testid="stDataFrame"] {
+        background-color: #181A20 !important;
+        border: 1px solid #2B313A !important;
+        border-radius: 10px;
+    }
+
+    /* 8. Ajustes para pantallas pequeñas (móviles) */
     @media (max-width: 768px) {
         .brand-title {
             font-size: 1.7rem;
