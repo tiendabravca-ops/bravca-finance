@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from PIL import Image
 
 def crear_tablas_rrhh_si_no_existen(conn):
@@ -92,12 +92,11 @@ def run():
     ])
 
     # ---------------------------------------------------------
-    # TAB 1: COLABORADORES (CON MODALIDAD DE PAGO FUERA DEL FORM)
+    # TAB 1: COLABORADORES
     # ---------------------------------------------------------
     with tab1:
         st.markdown("### Registro de Nuevo Colaborador")
         
-        # Selector fuera del formulario para refrescar campos dinámicamente
         col_tipo, _ = st.columns([2, 2])
         with col_tipo:
             tipo_pago = st.selectbox(
@@ -118,9 +117,9 @@ def run():
                 else:
                     salario_base = 0.0
                     tarifa_hora = st.number_input("Tarifa Base por Hora (₡)", min_value=1000.0, value=2000.0, step=250.0)
-                    st.caption("ℹ️ El pago total quincenal variará según las horas registradas en la pestaña 'Adelantos & Horas Libres'.")
+                    st.caption("ℹ️ Registra las horas trabajadas en la pestaña 'Adelantos & Horas Libres'.")
 
-                fecha_ingreso = st.date_input("Fecha de Ingreso", value=datetime.today())
+                fecha_ingreso = st.date_input("Fecha de Ingreso a la Empresa", value=datetime.today())
             
             submitted = st.form_submit_button("Guardar Colaborador")
             if submitted and nombre:
@@ -130,7 +129,7 @@ def run():
                     (nombre, tienda, puesto, tipo_pago, salario_base, tarifa_hora, str(fecha_ingreso))
                 )
                 conn.commit()
-                st.success(f"¡Colaborador {nombre} registrado con éxito ({tipo_pago})!")
+                st.success(f"¡Colaborador {nombre} registrado con éxito!")
                 st.rerun()
 
         st.markdown("---")
@@ -167,7 +166,6 @@ def run():
             for _, emp in df_activos.iterrows():
                 emp_id = emp['id']
                 
-                # Horas y montos acumulados por cobertura de libres
                 df_cob = pd.read_sql(f"SELECT SUM(monto_total) as total, SUM(horas_trabajadas) as horas FROM coberturas_libres WHERE colaborador_id={emp_id}", conn)
                 total_coberturas = df_cob['total'].iloc[0] if df_cob['total'].iloc[0] else 0.0
                 horas_totales = df_cob['horas'].iloc[0] if df_cob['horas'].iloc[0] else 0.0
@@ -179,7 +177,6 @@ def run():
                     salario_periodo = 0.0
                     salario_bruto = total_coberturas
 
-                # Adelantos registrados
                 df_ad = pd.read_sql(f"SELECT SUM(monto) as total FROM movimientos_rrhh WHERE colaborador_id={emp_id} AND tipo LIKE '%Adelanto%'", conn)
                 total_adelantos = df_ad['total'].iloc[0] if df_ad['total'].iloc[0] else 0.0
 
@@ -229,7 +226,7 @@ def run():
             st.info("No hay colaboradores activos para procesar planilla.")
 
     # ---------------------------------------------------------
-    # TAB 3: REGISTRO DE HORAS TRABAJADAS & ADELANTOS
+    # TAB 3: REGISTRO DE HORAS DIRECTO
     # ---------------------------------------------------------
     with tab3:
         st.markdown("### Registro de Horas Trabajadas y Movimientos")
@@ -242,26 +239,28 @@ def run():
             col_a, col_b = st.columns(2)
 
             with col_a:
-                st.markdown("##### ⏳ Registrar Horas de Fin de Semana / Coberturas")
-                with st.form("form_cobertura", clear_on_submit=True):
+                st.markdown("##### ⏳ Registrar Horas Trabajadas (Suma Directa)")
+                with st.form("form_cobertura_directa", clear_on_submit=True):
                     sel_colab_cob = st.selectbox("Colaborador", list(colab_dict.keys()), key="cob_colab")
                     c_id = colab_dict[sel_colab_cob]
                     tarifa_sugerida = tarifa_dict[c_id] if tarifa_dict[c_id] > 0 else 2000.0
 
-                    horas = st.number_input("Horas Trabajadas", min_value=0.5, max_value=24.0, value=8.0, step=0.5)
+                    fecha_turno = st.date_input("Fecha o Día del Turno", value=datetime.today())
+                    total_horas = st.number_input("Cantidad Total de Horas Trabajadas (Ej: 8, 12, 16 hrs)", min_value=0.5, max_value=100.0, value=8.0, step=0.5)
                     tarifa = st.number_input("Tarifa por Hora (₡)", min_value=1000.0, value=float(tarifa_sugerida), step=250.0)
-                    motivo = st.text_input("Motivo / Turno (Ej: Cobertura Sábado y Domingo Santa Elena)")
-                    monto_tot = horas * tarifa
-                    st.caption(f"**Total calculado para este turno:** ₡ {monto_tot:,.2f}")
+                    motivo = st.text_input("Motivo / Tienda (Ej: Cobertura Sábado y Domingo Santa Elena)")
+                    
+                    monto_tot = total_horas * tarifa
+                    st.info(f"💰 **Total a Pagar por estas horas:** ₡ {monto_tot:,.2f} ({total_horas} hrs x ₡{tarifa:,.0f})")
 
                     if st.form_submit_button("Registrar Horas"):
                         cursor = conn.cursor()
                         cursor.execute(
                             "INSERT INTO coberturas_libres (colaborador_id, fecha, horas_trabajadas, tarifa_hora, monto_total, motivo_cobertura) VALUES (?, ?, ?, ?, ?, ?)",
-                            (c_id, str(datetime.today().date()), horas, tarifa, monto_tot, motivo)
+                            (c_id, str(fecha_turno), total_horas, tarifa, monto_tot, motivo)
                         )
                         conn.commit()
-                        st.success("Horas registradas correctamente.")
+                        st.success("¡Horas registradas exitosamente!")
                         st.rerun()
 
             with col_b:
@@ -284,10 +283,10 @@ def run():
         st.markdown("---")
         st.markdown("### Historial Reciente de Horas Registradas")
         df_cob_rec = pd.read_sql("""
-            SELECT cl.fecha, c.nombre, cl.horas_trabajadas, cl.tarifa_hora, cl.monto_total, cl.motivo_cobertura 
+            SELECT cl.fecha as 'Fecha', c.nombre, cl.horas_trabajadas as 'Horas', cl.tarifa_hora as 'Tarifa/Hr', cl.monto_total as 'Monto Total', cl.motivo_cobertura as 'Notas'
             FROM coberturas_libres cl 
             JOIN colaboradores c ON cl.colaborador_id = c.id 
-            ORDER BY cl.fecha DESC LIMIT 15
+            ORDER BY cl.id DESC LIMIT 15
         """, conn)
         if not df_cob_rec.empty:
             st.dataframe(df_cob_rec, use_container_width=True)
