@@ -7,6 +7,7 @@ import modules.historico as hist
 import modules.fondos as fnd
 import modules.cierres as cierres
 import modules.obligaciones as obs
+import modules.rrhh as rrhh_mod
 import modules.crypto_alertas as crypto_mod
 
 st.set_page_config(
@@ -189,6 +190,7 @@ opcion = st.sidebar.radio(
         "🏦 Control de Fondos", 
         "📥 Cierres de Caja", 
         "📝 Registro de Obligaciones",
+        "👥 Recursos Humanos",
         "⚡ Monitoreo Cripto (Binance)"
     ],
     label_visibility="collapsed",
@@ -199,6 +201,7 @@ opcion = st.sidebar.radio(
         "🏦 Control de Fondos": "🏦  Control de Fondos",
         "📥 Cierres de Caja": "📥  Cierres de Caja",
         "📝 Registro de Obligaciones": "📝  Registro de Obligaciones",
+        "👥 Recursos Humanos": "👥  Recursos Humanos",
         "⚡ Monitoreo Cripto (Binance)": "⚡  Monitoreo Cripto (Binance)"
     }.get(x, x)
 )
@@ -220,5 +223,7 @@ elif opcion == "📥 Cierres de Caja":
     cierres.run()
 elif opcion == "📝 Registro de Obligaciones":
     obs.run()
+elif opcion == "👥 Recursos Humanos":
+    rrhh_mod.run()
 elif opcion == "⚡ Monitoreo Cripto (Binance)":
     crypto_mod.run()
