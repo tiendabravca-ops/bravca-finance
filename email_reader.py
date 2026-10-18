@@ -40,8 +40,8 @@ def init_db():
     """)
     conn.commit()
 
-    # Cargar histórico oficial fijo del 1 al 15 de Octubre (si no existe)
-    historico_octubre = [
+    # Precarga oficial estrictamente limitada del 1 al 15 de Octubre
+    historico_1_al_15 = [
         # --- Bravca Souvenir ---
         ("2026-10-01", "Bravca Souvenir", 31900.00),
         ("2026-10-02", "Bravca Souvenir", 6000.00),
@@ -76,7 +76,8 @@ def init_db():
         ("2026-10-15", "Bravca Extremo", 10600.00),
     ]
 
-    for fecha_str, negocio_str, monto in historico_octubre:
+    for fecha_str, negocio_str, monto in historico_1_al_15:
+        # Solo inserta el histórico si no existe previamente
         cursor.execute("SELECT id FROM cierres WHERE fecha LIKE ? AND negocio = ?", (f"{fecha_str}%", negocio_str))
         if not cursor.fetchone():
             cursor.execute("""
@@ -107,9 +108,8 @@ def sincronizar_cierres_gmail():
             return False, "No se pudo acceder a la bandeja de entrada."
 
         email_ids = messages[0].split()
-        # Escaneamos los últimos 40 correos para asegurar que abarque el 16 y el 17 sin perder ninguno
-        email_ids = email_ids[-40:] 
-        registros_procesados = 0
+        # Escaneamos los últimos 50 correos para capturar todos los reportes del día 15 en adelante
+        email_ids = email_ids[-50:] 
 
         for e_id in email_ids:
             res, msg_data = mail.fetch(e_id, "(RFC822)")
@@ -153,58 +153,61 @@ def sincronizar_cierres_gmail():
 
                         full_content = body + "\n" + pdf_text
 
-                        # Extracción real desde el correo y PDF
+                        # Extracción real de datos del correo y PDF
                         negocio_match = re.search(r"Negocio\s+([^\n]+)", full_content)
                         cajero_match = re.search(r"Cajero\(a\)\s+([^\n]+)", full_content)
                         fecha_match = re.search(r"(?:Cerrado|Fecha)\s+([^\n]+)", full_content)
 
                         negocio = negocio_match.group(1).strip() if negocio_match else "Bravca Souvenir"
                         cajero = cajero_match.group(1).strip() if cajero_match else "Cajero"
-                        fecha = fecha_match.group(1).strip() if fecha_match else "2026-10-17 19:01"
+                        fecha = fecha_match.group(1).strip() if fecha_match else ""
 
-                        # Extracción estricta de tarjeta y efectivo reales del PDF adjunto
-                        tarjeta_colones = 0.0
-                        efectivo_colones = 0.0
+                        if not fecha:
+                            continue
 
-                        t_match = re.search(r"Tarjeta[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
-                        if t_match:
-                            tarjeta_colones = float(t_match.group(1).replace(",", ""))
+                        # Procesar únicamente del 15 en adelante (o fechas recientes)
+                        if fecha[:10] >= "2026-10-15":
+                            tarjeta_colones = 0.0
+                            efectivo_colones = 0.0
 
-                        e_match = re.search(r"(?:Efectivo\s*cobrado|Conteo\s+de\s+efectivo)[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
-                        if e_match:
-                            efectivo_colones = float(e_match.group(1).replace(",", ""))
+                            t_match = re.search(r"Tarjeta[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
+                            if t_match:
+                                tarjeta_colones = float(t_match.group(1).replace(",", ""))
 
-                        colones = tarjeta_colones + efectivo_colones
-                        if colones == 0.0:
-                            total_match = re.search(r"Total[^\d]*([\d,]+\.\d{2})", full_content, ré.IGNORECASE if 'ré' in globals() else re.IGNORECASE)
-                            if total_match:
-                                colones = float(total_match.group(1).replace(",", ""))
+                            e_match = re.search(r"(?:Efectivo\s*cobrado|Conteo\s+de\s+efectivo)[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
+                            if e_match:
+                                efectivo_colones = float(e_match.group(1).replace(",", ""))
 
-                        dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.\d{2})", full_content)
-                        dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 0.0
+                            colones = tarjeta_colones + efectivo_colones
+                            if colones == 0.0:
+                                total_match = re.search(r"Total[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
+                                if total_match:
+                                    colones = float(total_match.group(1).replace(",", ""))
 
-                        # Guardar o actualizar rigurosamente por fecha completa (hora exacta) para no pisar el día 16 con el 17
-                        cursor.execute("SELECT id FROM cierres WHERE fecha = ? AND negocio = ?", (fecha, negocio))
-                        row = cursor.fetchone()
-                        
-                        if row:
-                            cursor.execute("""
-                                UPDATE cierres 
-                                SET cajero = ?, colones = ?, dolares = ?, tarjeta_colones = ?, efectivo_colones = ?, estado = ?
-                                WHERE id = ?
-                            """, (cajero, colones, dolares, tarjeta_colones, efectivo_colones, "Recibido / Verificado", row[0]))
-                        else:
-                            cursor.execute("""
-                                INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, "Recibido / Verificado"))
-                        
-                        conn.commit()
-                        registros_procesados += 1
+                            dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.\d{2})", full_content)
+                            dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 0.0
+
+                            # Verificar si ya existe este registro en la base de datos para actualizarlo o insertarlo limpio
+                            cursor.execute("SELECT id FROM cierres WHERE fecha LIKE ? AND negocio = ? AND cajero != 'Histórico Simplifica2'", (f"{fecha[:10]}%", negocio))
+                            row = cursor.fetchone()
+                            
+                            if row:
+                                cursor.execute("""
+                                    UPDATE cierres 
+                                    SET cajero = ?, fecha = ?, colones = ?, dolares = ?, tarjeta_colones = ?, efectivo_colones = ?, estado = ?
+                                    WHERE id = ?
+                                """, (cajero, fecha, colones, dolares, tarjeta_colones, efectivo_colones, "Recibido / Verificado", row[0]))
+                            else:
+                                cursor.execute("""
+                                    INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                """, (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, "Recibido / Verificado"))
+                            
+                            conn.commit()
 
         mail.logout()
         conn.close()
-        return True, "Sincronización completa. Correos del 16 y 17 leídos y actualizados correctamente."
+        return True, "Sincronización completa. Días del 15 en adelante actualizados desde Gmail."
 
     except Exception as e:
         conn.close()
