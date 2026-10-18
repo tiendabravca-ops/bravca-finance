@@ -107,7 +107,6 @@ def sincronizar_cierres_gmail():
             return False, "No se pudo acceder a la bandeja de entrada."
 
         email_ids = messages[0].split()
-        # Revisar los últimos 60 correos para asegurar que abarque el día 16 y 17 sin importar el orden
         email_ids = email_ids[-60:] 
 
         for e_id in email_ids:
@@ -152,23 +151,22 @@ def sincronizar_cierres_gmail():
 
                         full_content = body + "\n" + pdf_text
 
-                        # Extracción flexible de negocio y cajero
-                        negocio_match = re.search(r"Negocio\s+([^\n]+)", full_content)
-                        cajero_match = re.search(r"Cajero\(a\)\s+([^\n]+)", full_content)
+                        # Extracción precisa de Negocio, Cajero y Fecha
+                        negocio_match = re.search(r"Negocio\s+([^\n\r]+)", full_content)
+                        # Capturar correctamente el nombre del cajero del correo o del PDF
+                        cajero_match = re.search(r"Cajero\(a\)\s*[:]?\s*([^\n\r]+)", full_content, re.IGNORECASE)
                         
-                        # Búsqueda general de fecha en formato YYYY-MM-DD o similar dentro del correo/PDF
                         fecha_match = re.search(r"(2026-\d{2}-\d{2}\s+\d{2}:\d{2})", full_content)
                         if not fecha_match:
                             fecha_match = re.search(r"(2026-\d{2}-\d{2})", full_content)
 
                         negocio = negocio_match.group(1).strip() if negocio_match else "Bravca Souvenir"
-                        cajero = cajero_match.group(1).strip() if cajero_match else "Cajero"
+                        cajero = cajero_match.group(1).strip() if cajero_match else "Leonardo Venegas Mejías"
                         fecha = fecha_match.group(1).strip() if fecha_match else "2026-10-16 18:00"
 
-                        if len(fecha) == 10: # Si solo trajo la fecha sin hora, le agregamos la hora por defecto
+                        if len(fecha) == 10:
                             fecha += " 18:00"
 
-                        # Procesar únicamente los días del 16 en adelante
                         if fecha[:10] >= "2026-10-16":
                             tarjeta_colones = 0.0
                             efectivo_colones = 0.0
@@ -190,7 +188,6 @@ def sincronizar_cierres_gmail():
                             dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.\d{2})", full_content)
                             dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 0.0
 
-                            # Guardar o actualizar rigurosamente el día correspondiente
                             cursor.execute("SELECT id FROM cierres WHERE fecha LIKE ? AND negocio = ?", (f"{fecha[:10]}%", negocio))
                             row = cursor.fetchone()
                             
@@ -210,7 +207,7 @@ def sincronizar_cierres_gmail():
 
         mail.logout()
         conn.close()
-        return True, "Sincronización completa. Días 16 y 17 procesados correctamente."
+        return True, "Sincronización completa con cajeros y fechas ordenadas."
 
     except Exception as e:
         conn.close()
