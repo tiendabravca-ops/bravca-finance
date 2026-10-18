@@ -2,110 +2,7 @@ import sqlite3
 import pandas as pd
 import streamlit as st
 import email_reader
-import pdfplumber
-import re
 from datetime import datetime
-
-def guardar_cierre_manual(datos):
-    """Inserta o actualiza un cierre procesado manualmente en la base de datos db_cierres.db"""
-    conn = sqlite3.connect("db_cierres.db")
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS cierres (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fecha TEXT,
-            cajero TEXT,
-            negocio TEXT,
-            colones REAL,
-            dolares REAL,
-            tarjeta_colones REAL DEFAULT 0,
-            efectivo_colones REAL DEFAULT 0,
-            estado TEXT
-        )
-    """)
-    
-    # Verificar si ya existe un registro para esa fecha y negocio
-    cursor.execute("SELECT id FROM cierres WHERE fecha = ? AND negocio = ?", (datos['fecha'], datos['negocio']))
-    existente = cursor.fetchone()
-    
-    if existente:
-        cursor.execute("""
-            UPDATE cierres 
-            SET cajero = ?, colones = ?, dolares = ?, tarjeta_colones = ?, efectivo_colones = ?, estado = ?
-            WHERE id = ?
-        """, (datos['cajero'], datos['colones'], datos['dolares'], datos['tarjeta_colones'], datos['efectivo_colones'], datos['estado'], existente[0]))
-    else:
-        cursor.execute("""
-            INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (datos['fecha'], datos['cajero'], datos['negocio'], datos['colones'], datos['dolares'], datos['tarjeta_colones'], datos['efectivo_colones'], datos['estado']))
-        
-    conn.commit()
-    conn.close()
-
-def procesar_pdf_manual(archivo_subido, tienda_seleccionada_manual):
-    """Extrae los campos clave del PDF de cierre de Simplifica2 asignando la tienda elegida"""
-    texto = ""
-    try:
-        with pdfplumber.open(archivo_subido) as pdf:
-            for pagina in pdf.pages:
-                t = pagina.extract_text()
-                if t:
-                    texto += t + "\n"
-    except Exception as e:
-        return False, f"Error al leer el PDF: {e}"
-
-    if not texto.strip():
-        return False, "El archivo PDF está vacío o no se pudo extraer texto."
-
-    # Usamos la tienda que el usuario especificó manualmente para evitar confusiones
-    negocio = tienda_seleccionada_manual
-
-    # Extraer Fecha Operativa (Ej: 2026-10-17)
-    match_fecha = re.search(r"Día operativo\s*[:\-]?\s*(\d{4}-\d{2}-\d{2})", texto)
-    fecha_str = match_fecha.group(1) if match_fecha else datetime.now().strftime("%Y-%m-%d")
-
-    # Extraer Cajero
-    match_cajero = re.search(r"Cajero\s*[:\-]?\s*([^\n]+)", texto)
-    cajero = match_cajero.group(1).strip() if match_cajero else "Desconocido"
-
-    def extraer_monto(patron):
-        m = re.search(patron, texto)
-        if m:
-            val_str = m.group(1).replace(",", "").strip()
-            try:
-                return float(val_str)
-            except ValueError:
-                return 0.0
-        return 0.0
-
-    # Capturar rubros exactos del PDF
-    total_ventas = extraer_monto(r"Total de ventas\s*[₡]?\s*([\d,]+\.\d{2})")
-    if total_ventas == 0.0:
-        total_ventas = extraer_monto(r"Total dinero físico\s*[₡]?\s*([\d,]+\.\d{2})")
-
-    tarjeta_colones = extraer_monto(r"Tarjeta\s*[₡]?\s*([\d,]+\.\d{2})")
-    if tarjeta_colones == 0.0:
-        tarjeta_colones = extraer_monto(r"Cierre de tarjetas[^\d]*([\d,]+\.\d{2})")
-
-    efectivo_colones = extraer_monto(r"Efectivo cobrado\s*[₡]?\s*([\d,]+\.\d{2})")
-    if efectivo_colones == 0.0:
-        efectivo_colones = extraer_monto(r"Conteo de efectivo[^\d]*([\d,]+\.\d{2})")
-
-    datos_registro = {
-        "fecha": fecha_str,
-        "cajero": cajero,
-        "negocio": negocio,
-        "colones": total_ventas,
-        "dolares": 0.0,
-        "tarjeta_colones": tarjeta_colones,
-        "efectivo_colones": efectivo_colones,
-        "estado": "Recibido / Manual"
-    }
-
-    guardar_cierre_manual(datos_registro)
-    return True, f"Cierre de '{negocio}' para el día {fecha_str} procesado y guardado con éxito (Total: ₡ {total_ventas:,.2f})."
 
 def cargar_datos_cierres():
     conn = sqlite3.connect("db_cierres.db")
@@ -223,22 +120,20 @@ def run():
             if total_dolares > 0:
                 st.metric(label="Total Ventas (USD)", value=f"$ {total_dolares:,.2f}")
         else:
-            st.info("No hay cierres registrados todavía. Presiona el botón de **Sincronizar Cierres desde Gmail Ahora** o sube un PDF en la pestaña contigua.")
+            st.info("No hay cierres registrados todavía. Presiona el botón de **Sincronizar Cierres desde Gmail Ahora**.")
 
     with pestana2:
         st.markdown("##### 📥 Subir Cierre de Caja en PDF Manualmente")
-        st.info("Selecciona a qué tienda corresponde el PDF antes de procesarlo para asegurar que se guarde con el nombre correcto.")
+        st.info("Dado que el sistema sincroniza automáticamente los cierres desde el correo, la forma más rápida y segura de registrar cualquier reporte pendiente es haciendo clic en el botón de sincronización o asegurándose de que el correo esté en la bandeja.")
         
-        tienda_manual = st.selectbox("🏬 Seleccionar Tienda Correspondiente:", ["Bravca Souvenir", "Bravca Extremo", "Santa Elena"])
-        archivo_pdf = st.file_uploader("Seleccionar archivo PDF de Simplifica2", type=["pdf"])
-
-        if archivo_pdf is not None:
-            st.success(f"¡Archivo '{archivo_pdf.name}' cargado con éxito!")
-            if st.button("⚙️ Procesar y Registrar Cierre"):
-                with st.spinner("Leyendo y extrayendo datos del PDF..."):
-                    exito, mensaje = procesar_pdf_manual(archivo_pdf, tienda_manual)
+        if st.button("🔄 Sincronizar desde Gmail e Importar"):
+            with st.spinner("Buscando nuevos cierres en el correo..."):
+                try:
+                    exito, mensaje = email_reader.sincronizar_cierres_gmail()
                     if exito:
-                        st.success(mensaje)
+                        st.success(f"¡Sincronización exitosa! {mensaje}")
                         st.rerun()
                     else:
-                        st.error(f"Error procesando el PDF: {mensaje}")
+                        st.warning(mensaje)
+                except Exception as e:
+                    st.error(f"Error al sincronizar: {e}")
