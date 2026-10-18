@@ -151,18 +151,25 @@ def sincronizar_cierres_gmail():
 
                         full_content = body + "\n" + pdf_text
 
-                        # Extracción precisa de Negocio, Cajero y Fecha
+                        # Extracción mejorada para capturar el nombre real del cajero (ej. NICOLE)
                         negocio_match = re.search(r"Negocio\s+([^\n\r]+)", full_content)
-                        # Capturar correctamente el nombre del cajero del correo o del PDF
-                        cajero_match = re.search(r"Cajero\(a\)\s*[:]?\s*([^\n\r]+)", full_content, re.IGNORECASE)
-                        
+                        cajero_match = re.search(r"Cajero\(a\)\s+([^\n\r]+)", full_content, re.IGNORECASE)
+                        if not cajero_match:
+                            cajero_match = re.search(r"Cajero\s*[:]?\s*([^\n\r]+)", full_content, re.IGNORECASE)
+
                         fecha_match = re.search(r"(2026-\d{2}-\d{2}\s+\d{2}:\d{2})", full_content)
                         if not fecha_match:
                             fecha_match = re.search(r"(2026-\d{2}-\d{2})", full_content)
 
                         negocio = negocio_match.group(1).strip() if negocio_match else "Bravca Souvenir"
-                        cajero = cajero_match.group(1).strip() if cajero_match else "Leonardo Venegas Mejías"
-                        fecha = fecha_match.group(1).strip() if fecha_match else "2026-10-16 18:00"
+                        
+                        # Extraer cajero real y evitar que quede genérico
+                        cajero_raw = cajero_match.group(1).strip() if cajero_match else ""
+                        cajero = cajero_raw if cajero_raw and cajero_raw.lower() not in ["cajero", "cajero(a)"] else "Leonardo Venegas Mejías"
+
+                        fecha = fecha_match.group(1).strip() if fecha_match else ""
+                        if not fecha:
+                            continue
 
                         if len(fecha) == 10:
                             fecha += " 18:00"
@@ -188,26 +195,19 @@ def sincronizar_cierres_gmail():
                             dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.\d{2})", full_content)
                             dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 0.0
 
-                            cursor.execute("SELECT id FROM cierres WHERE fecha LIKE ? AND negocio = ?", (f"{fecha[:10]}%", negocio))
-                            row = cursor.fetchone()
+                            # Limpiamos cualquier registro previo defectuoso del 16 o 17 para volverlo a insertar impecable
+                            cursor.execute("DELETE FROM cierres WHERE fecha LIKE ? AND negocio = ? AND cajero != 'Histórico Simplifica2'", (f"{fecha[:10]}%", negocio))
                             
-                            if row:
-                                cursor.execute("""
-                                    UPDATE cierres 
-                                    SET cajero = ?, fecha = ?, colones = ?, dolares = ?, tarjeta_colones = ?, efectivo_colones = ?, estado = ?
-                                    WHERE id = ?
-                                """, (cajero, fecha, colones, dolares, tarjeta_colones, efectivo_colones, "Recibido / Verificado", row[0]))
-                            else:
-                                cursor.execute("""
-                                    INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                                """, (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, "Recibido / Verificado"))
+                            cursor.execute("""
+                                INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, "Recibido / Verificado"))
                             
                             conn.commit()
 
         mail.logout()
         conn.close()
-        return True, "Sincronización completa con cajeros y fechas ordenadas."
+        return True, "Sincronización completa. Cajeros y fechas actualizados."
 
     except Exception as e:
         conn.close()
