@@ -57,16 +57,6 @@ st.markdown("""
         color: #F5A623 !important;
     }
 
-    /* Ajuste para centrar y estilizar el logo en la barra lateral */
-    [data-testid="stSidebar"] [data-testid="stImage"] {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin: 0 auto;
-        border-radius: 16px;
-        overflow: hidden;
-    }
-
     /* 4. Tarjetas KPIs tipo Clean Card con sombra flotante */
     .brabca-card {
         background-color: #FFFFFF !important;
@@ -172,27 +162,24 @@ database.init_db()
 database.cargar_ventas_octubre_simplifica2()
 database.auto_generar_gastos_fijos()
 
-# --- SECCIÓN DEL LOGO & BARRA LATERAL ---
-# Mostrar el logo contenido a 120px de ancho y centrado
-sb_col1, sb_col2, sb_col3 = st.sidebar.columns([1, 2, 1])
-with sb_col2:
-    if os.path.exists("logo.png"):
-        st.image("logo.png", width=120)
-    elif os.path.exists("logo.jpg"):
-        st.image("logo.jpg", width=120)
+# --- SECCIÓN DEL LOGO Y CARGA EN BARRA LATERAL ---
+# Mostrar logo con el tamaño completo en el sidebar
+if os.path.exists("logo.png"):
+    st.sidebar.image("logo.png", use_container_width=True)
+elif os.path.exists("logo.jpg"):
+    st.sidebar.image("logo.jpg", use_container_width=True)
+
+# Subida directa de la imagen integrada en la barra lateral
+uploaded_logo = st.sidebar.file_uploader("🖼️ Cambiar Logo", type=["png", "jpg", "jpeg"], key="uploader_directo")
+if uploaded_logo is not None:
+    image = Image.open(uploaded_logo)
+    image.save("logo.png")
+    st.sidebar.success("¡Logo cargado!")
+    st.rerun()
 
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
-
-# Opción desplegable en el sidebar para cargar/actualizar el logo
-with st.sidebar.expander("🖼️ Cargar / Cambiar Logo"):
-    uploaded_logo = st.file_uploader("Sube tu logo (PNG/JPG)", type=["png", "jpg", "jpeg"], key="uploader_logo")
-    if uploaded_logo is not None:
-        image = Image.open(uploaded_logo)
-        image.save("logo.png")
-        st.success("¡Logo cargado correctamente!")
-        st.rerun()
-
 st.sidebar.markdown("### **Menú Principal**")
+
 opcion = st.sidebar.radio(
     "Selecciona una opción:",
     [
