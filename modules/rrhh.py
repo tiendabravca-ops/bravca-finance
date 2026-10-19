@@ -168,6 +168,7 @@ def run():
             for _, emp in df_activos.iterrows():
                 emp_id = emp['id']
                 
+                # Suma de coberturas de libres / horas
                 df_cob = pd.read_sql(f"SELECT SUM(monto_total) as total, SUM(horas_trabajadas) as horas FROM coberturas_libres WHERE colaborador_id={emp_id}", conn)
                 total_coberturas = df_cob['total'].iloc[0] if df_cob['total'].iloc[0] else 0.0
                 horas_totales = df_cob['horas'].iloc[0] if df_cob['horas'].iloc[0] else 0.0
@@ -179,7 +180,8 @@ def run():
                     salario_periodo = 0.0
                     salario_bruto = total_coberturas
 
-                df_ad = pd.read_sql(f"SELECT SUM(monto) as total FROM movimientos_rrhh WHERE colaborador_id={emp_id} AND tipo LIKE '%Adelanto%'", conn)
+                # Corregido: Suma general de TODOS los adelantos y deducciones del colaborador
+                df_ad = pd.read_sql(f"SELECT SUM(monto) as total FROM movimientos_rrhh WHERE colaborador_id={emp_id}", conn)
                 total_adelantos = df_ad['total'].iloc[0] if df_ad['total'].iloc[0] else 0.0
 
                 ccss_obrero = salario_bruto * 0.1067
@@ -197,7 +199,7 @@ def run():
                     "Total Pago por Horas (+)": total_coberturas,
                     "Salario Bruto": salario_bruto,
                     "CCSS Obrero (10.67%) (-)": ccss_obrero,
-                    "Adelantos (-)": total_adelantos,
+                    "Adelantos / Deducciones (-)": total_adelantos,
                     "Pago Neto Liquido": pago_neto,
                     "Costo Patronal CCSS (26.67%)": ccss_patronal
                 })
@@ -210,7 +212,7 @@ def run():
                 "Total Pago por Horas (+)": "₡{:,.2f}",
                 "Salario Bruto": "₡{:,.2f}",
                 "CCSS Obrero (10.67%) (-)": "₡{:,.2f}",
-                "Adelantos (-)": "₡{:,.2f}",
+                "Adelantos / Deducciones (-)": "₡{:,.2f}",
                 "Pago Neto Liquido": "₡{:,.2f}",
                 "Costo Patronal CCSS (26.67%)": "₡{:,.2f}"
             }), use_container_width=True)
@@ -237,8 +239,27 @@ def run():
             if emp_seleccionado:
                 datos_emp = df_planilla_final[df_planilla_final['Colaborador'] == emp_seleccionado].iloc[0]
 
+                # Texto formateado limpio para copiar fácilmente
+                texto_copia = f"""*COMPROBANTE DE PAGO - BRÁVCA*
+*Periodo:* {periodo} ({datetime.today().strftime('%d/%m/%Y')})
+---------------------------------------
+*Colaborador:* {datos_emp['Colaborador']}
+*Tienda:* {datos_emp['Tienda']} | *Puesto:* {datos_emp['Puesto']}
+---------------------------------------
+• Salario Base Periodo: ₡ {datos_emp[col_sal_periodo]:,.2f}
+• Pago Horas/Extras ({datos_emp['Horas Trabajadas']} hrs): ₡ {datos_emp['Total Pago por Horas (+)']:,.2f}
+• *SALARIO BRUTO:* ₡ {datos_emp['Salario Bruto']:,.2f}
+• CCSS Obrero (10.67%): -₡ {datos_emp['CCSS Obrero (10.67%) (-)']:,.2f}
+• Adelantos / Deducciones: -₡ {datos_emp['Adelantos / Deducciones (-)']:,.2f}
+---------------------------------------
+*PAGO NETO A TRANSFERIR: ₡ {datos_emp['Pago Neto Liquido']:,.2f}*
+---------------------------------------"""
+
+                st.code(texto_copia, language="markdown")
+                st.caption("☝️ Usa el botón de copiar en la esquina superior derecha del cuadro anterior para enviarlo por WhatsApp/Correo.")
+
                 html_recibo = f"""
-                <div style="background-color: #ffffff; border: 2px solid #102A43; padding: 20px; border-radius: 10px; font-family: 'Inter', sans-serif; color: #102A43; max-width: 700px; margin: auto;">
+                <div id="recibo-imprimir" style="background-color: #ffffff; border: 2px solid #102A43; padding: 20px; border-radius: 10px; font-family: 'Inter', sans-serif; color: #102A43; max-width: 700px; margin: auto;">
                     <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #D9E2EC; padding-bottom: 10px;">
                         <div>
                             <h2 style="margin:0; color: #102A43; font-weight: 800;">bráVca</h2>
@@ -288,7 +309,7 @@ def run():
                             <tr>
                                 <td style="padding: 6px; color: #C53030;">Adelantos / Deducciones (-)</td>
                                 <td style="padding: 6px; text-align: right; color: #C53030;">Anticipos</td>
-                                <td style="padding: 6px; text-align: right; color: #C53030;">- ₡ {datos_emp['Adelantos (-)']:,.2f}</td>
+                                <td style="padding: 6px; text-align: right; color: #C53030;">- ₡ {datos_emp['Adelantos / Deducciones (-)']:,.2f}</td>
                             </tr>
                             <tr style="border-top: 2px solid #102A43; background-color: #E0FC3E; font-size: 14px;">
                                 <td style="padding: 8px; color: #102A43;"><b>PAGO NETO LÍQUIDO A TRANSFERIR</b></td>
@@ -302,16 +323,20 @@ def run():
                         <div style="border-top: 1px solid #9FB3C8; width: 40%; padding-top: 4px;">Firma Patrono / Gerencia</div>
                         <div style="border-top: 1px solid #9FB3C8; width: 40%; padding-top: 4px;">Firma Conforme Colaborador</div>
                     </div>
+
+                    <div style="text-align: center; margin-top: 15px;">
+                        <button onclick="window.print()" style="background-color: #102A43; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer;">🖨️ Imprimir / Guardar PDF</button>
+                    </div>
                 </div>
                 """
 
-                components.html(html_recibo, height=440, scrolling=True)
+                components.html(html_recibo, height=480, scrolling=True)
 
         else:
             st.info("No hay colaboradores para procesar en este momento.")
 
     # ---------------------------------------------------------
-    # TAB 3: REGISTRO DE HORAS DIRECTO
+    # TAB 3: REGISTRO DE HORAS DIRECTO & DEDUCCIONES
     # ---------------------------------------------------------
     with tab3:
         st.markdown("### Registro de Horas Trabajadas y Movimientos")
@@ -352,29 +377,49 @@ def run():
                 st.markdown("##### 💸 Registrar Adelanto / Deducción")
                 with st.form("form_movimiento", clear_on_submit=True):
                     sel_colab = st.selectbox("Colaborador", list(colab_dict.keys()), key="mov_colab")
+                    c_id_mov = colab_dict[sel_colab]
                     tipo_mov = st.selectbox("Tipo", ["Adelanto de Salario", "Deducción Extraordinaria", "Bono / Incentivo"])
-                    monto = st.number_input("Monto (₡)", min_value=0.0, step=5000.0)
+                    monto = st.number_input("Monto (₡)", min_value=0.0, step=1000.0)
+                    fecha_mov = st.date_input("Fecha del Adelanto/Deducción", value=datetime.today())
                     nota = st.text_input("Observación / Motivo")
+                    
                     if st.form_submit_button("Registrar Movimiento") and monto > 0:
                         cursor = conn.cursor()
                         cursor.execute(
                             "INSERT INTO movimientos_rrhh (colaborador_id, tipo, monto, fecha, nota) VALUES (?, ?, ?, ?, ?)",
-                            (colab_dict[sel_colab], tipo_mov, monto, str(datetime.today().date()), nota)
+                            (c_id_mov, tipo_mov, monto, str(fecha_mov), nota)
                         )
                         conn.commit()
-                        st.success("Registrado correctamente.")
+                        st.success("¡Adelanto/Deducción registrado correctamente!")
                         st.rerun()
 
         st.markdown("---")
-        st.markdown("### Historial Reciente de Horas Registradas")
-        df_cob_rec = pd.read_sql("""
-            SELECT cl.fecha as 'Fecha', c.nombre, cl.horas_trabajadas as 'Horas', cl.tarifa_hora as 'Tarifa/Hr', cl.monto_total as 'Monto Total', cl.motivo_cobertura as 'Notas'
-            FROM coberturas_libres cl 
-            JOIN colaboradores c ON cl.colaborador_id = c.id 
-            ORDER BY cl.id DESC LIMIT 15
-        """, conn)
-        if not df_cob_rec.empty:
-            st.dataframe(df_cob_rec, use_container_width=True)
+        col_h1, col_h2 = st.columns(2)
+        with col_h1:
+            st.markdown("### Historial de Horas Registradas")
+            df_cob_rec = pd.read_sql("""
+                SELECT cl.fecha as 'Fecha', c.nombre as 'Colaborador', cl.horas_trabajadas as 'Horas', cl.monto_total as 'Monto Total'
+                FROM coberturas_libres cl 
+                JOIN colaboradores c ON cl.colaborador_id = c.id 
+                ORDER BY cl.id DESC LIMIT 10
+            """, conn)
+            if not df_cob_rec.empty:
+                st.dataframe(df_cob_rec, use_container_width=True)
+            else:
+                st.info("No hay horas registradas.")
+
+        with col_h2:
+            st.markdown("### Historial de Adelantos y Deducciones")
+            df_mov_rec = pd.read_sql("""
+                SELECT m.fecha as 'Fecha', c.nombre as 'Colaborador', m.tipo as 'Tipo', m.monto as 'Monto', m.nota as 'Nota'
+                FROM movimientos_rrhh m
+                JOIN colaboradores c ON m.colaborador_id = c.id
+                ORDER BY m.id DESC LIMIT 10
+            """, conn)
+            if not df_mov_rec.empty:
+                st.dataframe(df_mov_rec, use_container_width=True)
+            else:
+                st.info("No hay adelantos ni deducciones registradas.")
 
     # ---------------------------------------------------------
     # TAB 4: ANÁLISIS & GRÁFICOS
