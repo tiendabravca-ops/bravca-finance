@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from PIL import Image
 
 def crear_tablas_rrhh_si_no_existen(conn):
-    """Garantiza la existencia de las tablas de RRHH y migra columnas si la tabla ya existía"""
+    """Garantiza la existencia de las tablas de RRHH y migra columnas sin perder datos"""
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS colaboradores (
@@ -22,6 +22,7 @@ def crear_tablas_rrhh_si_no_existen(conn):
         )
     ''')
     
+    # Migraciones defensivas para mantener compatibilidad
     try:
         cursor.execute("ALTER TABLE colaboradores ADD COLUMN tipo_pago TEXT DEFAULT 'Salario Fijo Mensual'")
     except sqlite3.OperationalError:
@@ -31,6 +32,9 @@ def crear_tablas_rrhh_si_no_existen(conn):
         cursor.execute("ALTER TABLE colaboradores ADD COLUMN tarifa_hora REAL DEFAULT 0")
     except sqlite3.OperationalError:
         pass
+
+    # Asegura que ningún registro previo quede sin estado Activo
+    cursor.execute("UPDATE colaboradores SET estado = 'Activo' WHERE estado IS NULL OR estado = ''")
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS movimientos_rrhh (
@@ -124,7 +128,7 @@ def run():
             if submitted and nombre:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "INSERT INTO colaboradores (nombre, tienda, puesto, tipo_pago, salario_base, tarifa_hora, fecha_ingreso) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO colaboradores (nombre, tienda, puesto, tipo_pago, salario_base, tarifa_hora, fecha_ingreso, estado) VALUES (?, ?, ?, ?, ?, ?, ?, 'Activo')",
                     (nombre, tienda, puesto, tipo_pago, salario_base, tarifa_hora, str(fecha_ingreso))
                 )
                 conn.commit()
@@ -133,7 +137,7 @@ def run():
 
         st.markdown("---")
         st.markdown("### Listado de Personal Activo")
-        df_col = pd.read_sql("SELECT id, nombre, tienda, puesto, tipo_pago, salario_base, tarifa_hora, fecha_ingreso FROM colaboradores WHERE estado='Activo'", conn)
+        df_col = pd.read_sql("SELECT id, nombre, tienda, puesto, COALESCE(tipo_pago, 'Salario Fijo Mensual') as tipo_pago, salario_base, COALESCE(tarifa_hora, 0) as tarifa_hora, fecha_ingreso FROM colaboradores", conn)
         if not df_col.empty:
             st.dataframe(df_col, use_container_width=True)
             csv = df_col.to_csv(index=False).encode('utf-8')
@@ -142,7 +146,7 @@ def run():
             st.info("No hay colaboradores registrados todavía.")
 
     # ---------------------------------------------------------
-    # TAB 2: CÁLCULO DE PLANILLA NETO & CCSS + SUMATORIA TOTAL + RECIBOS INDIVIDUALES
+    # TAB 2: CÁLCULO DE PLANILLA NETO & CCSS + SUMATORIA TOTAL + RECIBOS
     # ---------------------------------------------------------
     with tab2:
         st.markdown("### 🧮 Cálculo de Nómina Quincenal / Mensual con CCSS")
@@ -158,7 +162,7 @@ def run():
 
         factor_periodo = 0.5 if "Quincena" in periodo else 1.0
 
-        df_activos = pd.read_sql("SELECT id, nombre, tienda, puesto, tipo_pago, salario_base, tarifa_hora FROM colaboradores WHERE estado='Activo'", conn)
+        df_activos = pd.read_sql("SELECT id, nombre, tienda, puesto, COALESCE(tipo_pago, 'Salario Fijo Mensual') as tipo_pago, salario_base, COALESCE(tarifa_hora, 0) as tarifa_hora FROM colaboradores", conn)
 
         if not df_activos.empty:
             lista_planilla = []
@@ -202,7 +206,6 @@ def run():
             df_planilla_final = pd.DataFrame(lista_planilla)
             col_sal_periodo = f"Salario Base ({periodo.split(' ')[0]})"
             
-            # Tabla desplegable general
             st.dataframe(df_planilla_final.drop(columns=["ID"]).style.format({
                 col_sal_periodo: "₡{:,.2f}",
                 "Total Pago por Horas (+)": "₡{:,.2f}",
@@ -213,7 +216,6 @@ def run():
                 "Costo Patronal CCSS (26.67%)": "₡{:,.2f}"
             }), use_container_width=True)
 
-            # Tarjetas de resumen métrico consolidado (Muestra el Bruto Total + Neto Total + CCSS)
             st.markdown("#### 📊 Consolidado Financiero de la Planilla")
             c1, c2, c3, c4 = st.columns(4)
             with c1:
@@ -231,14 +233,11 @@ def run():
             st.markdown("---")
             st.markdown("### 📄 Generar Comprobante / Recibo de Pago Individual")
             
-            col_sel_emp, col_btn_print = st.columns([3, 1])
-            with col_sel_emp:
-                emp_seleccionado = st.selectbox("Selecciona un colaborador para ver su boleta de pago:", df_planilla_final['Colaborador'].tolist())
+            emp_seleccionado = st.selectbox("Selecciona un colaborador para ver su boleta de pago:", df_planilla_final['Colaborador'].tolist())
 
             if emp_seleccionado:
                 datos_emp = df_planilla_final[df_planilla_final['Colaborador'] == emp_seleccionado].iloc[0]
 
-                # Recibo estilizado en pantalla corporativo bráVca
                 html_recibo = f"""
                 <div style="background-color: #ffffff; border: 2px solid #102A43; padding: 25px; border-radius: 10px; font-family: 'Inter', sans-serif; color: #102A43;">
                     <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #D9E2EC; padding-bottom: 10px;">
@@ -273,7 +272,7 @@ def run():
                                 <td style="padding: 8px; text-align: right;">₡ {datos_emp[col_sal_periodo]:,.2f}</td>
                             </tr>
                             <tr>
-                                <td style="padding: 8px;">Horas Trabaljadas / Libres (+):</td>
+                                <td style="padding: 8px;">Horas Trabajadas / Libres (+):</td>
                                 <td style="padding: 8px; text-align: right;">{datos_emp['Horas Trabajadas']} hrs</td>
                                 <td style="padding: 8px; text-align: right;">₡ {datos_emp['Total Pago por Horas (+)']:,.2f}</td>
                             </tr>
@@ -310,14 +309,14 @@ def run():
                 st.markdown(html_recibo, unsafe_allow_html=True)
 
         else:
-            st.info("No hay colaboradores activos para procesar planilla.")
+            st.info("No hay colaboradores para procesar en este momento.")
 
     # ---------------------------------------------------------
     # TAB 3: REGISTRO DE HORAS DIRECTO
     # ---------------------------------------------------------
     with tab3:
         st.markdown("### Registro de Horas Trabajadas y Movimientos")
-        df_colab_list = pd.read_sql("SELECT id, nombre, tarifa_hora FROM colaboradores WHERE estado='Activo'", conn)
+        df_colab_list = pd.read_sql("SELECT id, nombre, COALESCE(tarifa_hora, 2000) as tarifa_hora FROM colaboradores", conn)
         
         if not df_colab_list.empty:
             colab_dict = dict(zip(df_colab_list['nombre'], df_colab_list['id']))
@@ -385,7 +384,7 @@ def run():
         st.markdown("### 📊 Distribución Visual de Costos de Planilla")
         df_costos = pd.read_sql("""
             SELECT tienda, COUNT(id) as total_empleados, SUM(salario_base) as total_planilla 
-            FROM colaboradores WHERE estado='Activo' GROUP BY tienda
+            FROM colaboradores GROUP BY tienda
         """, conn)
 
         if not df_costos.empty:
