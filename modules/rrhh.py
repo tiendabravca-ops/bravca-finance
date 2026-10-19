@@ -22,7 +22,6 @@ def crear_tablas_rrhh_si_no_existen(conn):
         )
     ''')
     
-    # Migraciones defensivas para mantener compatibilidad
     try:
         cursor.execute("ALTER TABLE colaboradores ADD COLUMN tipo_pago TEXT DEFAULT 'Salario Fijo Mensual'")
     except sqlite3.OperationalError:
@@ -33,7 +32,6 @@ def crear_tablas_rrhh_si_no_existen(conn):
     except sqlite3.OperationalError:
         pass
 
-    # Asegura que ningún registro previo quede sin estado Activo
     cursor.execute("UPDATE colaboradores SET estado = 'Activo' WHERE estado IS NULL OR estado = ''")
 
     cursor.execute('''
@@ -137,7 +135,7 @@ def run():
 
         st.markdown("---")
         st.markdown("### Listado de Personal Activo")
-        df_col = pd.read_sql("SELECT id, nombre, tienda, puesto, COALESCE(tipo_pago, 'Salario Fijo Mensual') as tipo_pago, salario_base, COALESCE(tarifa_hora, 0) as tarifa_hora, fecha_ingreso FROM colaboradores", conn)
+        df_col = pd.read_sql("SELECT id, nombre, tienda, puesto, COALESCE(tipo_pago, 'Salario Fijo Mensual') as tipo_pago, salario_base, COALESCE(tarifa_hora, 0) as tarifa_hora, fecha_ingreso FROM colaboradores WHERE estado='Activo'", conn)
         if not df_col.empty:
             st.dataframe(df_col, use_container_width=True)
             csv = df_col.to_csv(index=False).encode('utf-8')
@@ -146,7 +144,7 @@ def run():
             st.info("No hay colaboradores registrados todavía.")
 
     # ---------------------------------------------------------
-    # TAB 2: CÁLCULO DE PLANILLA NETO & CCSS + SUMATORIA TOTAL + RECIBOS
+    # TAB 2: CÁLCULO DE PLANILLA NETO & CCSS + RECIBOS
     # ---------------------------------------------------------
     with tab2:
         st.markdown("### 🧮 Cálculo de Nómina Quincenal / Mensual con CCSS")
@@ -162,7 +160,7 @@ def run():
 
         factor_periodo = 0.5 if "Quincena" in periodo else 1.0
 
-        df_activos = pd.read_sql("SELECT id, nombre, tienda, puesto, COALESCE(tipo_pago, 'Salario Fijo Mensual') as tipo_pago, salario_base, COALESCE(tarifa_hora, 0) as tarifa_hora FROM colaboradores", conn)
+        df_activos = pd.read_sql("SELECT id, nombre, tienda, puesto, COALESCE(tipo_pago, 'Salario Fijo Mensual') as tipo_pago, salario_base, COALESCE(tarifa_hora, 0) as tarifa_hora FROM colaboradores WHERE estado='Activo'", conn)
 
         if not df_activos.empty:
             lista_planilla = []
@@ -316,7 +314,7 @@ def run():
     # ---------------------------------------------------------
     with tab3:
         st.markdown("### Registro de Horas Trabajadas y Movimientos")
-        df_colab_list = pd.read_sql("SELECT id, nombre, COALESCE(tarifa_hora, 2000) as tarifa_hora FROM colaboradores", conn)
+        df_colab_list = pd.read_sql("SELECT id, nombre, COALESCE(tarifa_hora, 2000) as tarifa_hora FROM colaboradores WHERE estado='Activo'", conn)
         
         if not df_colab_list.empty:
             colab_dict = dict(zip(df_colab_list['nombre'], df_colab_list['id']))
@@ -384,7 +382,7 @@ def run():
         st.markdown("### 📊 Distribución Visual de Costos de Planilla")
         df_costos = pd.read_sql("""
             SELECT tienda, COUNT(id) as total_empleados, SUM(salario_base) as total_planilla 
-            FROM colaboradores GROUP BY tienda
+            FROM colaboradores WHERE estado='Activo' GROUP BY tienda
         """, conn)
 
         if not df_costos.empty:
