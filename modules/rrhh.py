@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import sqlite3
 import os
@@ -237,74 +238,74 @@ def run():
                 datos_emp = df_planilla_final[df_planilla_final['Colaborador'] == emp_seleccionado].iloc[0]
 
                 html_recibo = f"""
-                <div style="background-color: #ffffff; border: 2px solid #102A43; padding: 25px; border-radius: 10px; font-family: 'Inter', sans-serif; color: #102A43;">
+                <div style="background-color: #ffffff; border: 2px solid #102A43; padding: 20px; border-radius: 10px; font-family: 'Inter', sans-serif; color: #102A43; max-width: 700px; margin: auto;">
                     <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #D9E2EC; padding-bottom: 10px;">
                         <div>
                             <h2 style="margin:0; color: #102A43; font-weight: 800;">bráVca</h2>
                             <span style="font-size: 12px; color: #627D98;">SOUVENIR & EXTREMO • MONTEVERDE</span>
                         </div>
                         <div style="text-align: right;">
-                            <h3 style="margin:0; color: #102A43;">COMPROBANTE DE PAGO</h3>
-                            <span style="font-size: 13px; color: #627D98;">{periodo} • {datetime.today().strftime('%d/%m/%Y')}</span>
+                            <h3 style="margin:0; color: #102A43; font-size: 16px;">COMPROBANTE DE PAGO</h3>
+                            <span style="font-size: 12px; color: #627D98;">{periodo} • {datetime.today().strftime('%d/%m/%Y')}</span>
                         </div>
                     </div>
                     
-                    <div style="margin-top: 15px; font-size: 14px;">
-                        <p style="margin: 4px 0;"><b>Colaborador:</b> {datos_emp['Colaborador']}</p>
-                        <p style="margin: 4px 0;"><b>Tienda:</b> {datos_emp['Tienda']} | <b>Puesto:</b> {datos_emp['Puesto']}</p>
-                        <p style="margin: 4px 0;"><b>Modalidad:</b> {datos_emp['Modalidad']}</p>
+                    <div style="margin-top: 15px; font-size: 13px;">
+                        <p style="margin: 3px 0;"><b>Colaborador:</b> {datos_emp['Colaborador']}</p>
+                        <p style="margin: 3px 0;"><b>Tienda:</b> {datos_emp['Tienda']} | <b>Puesto:</b> {datos_emp['Puesto']}</p>
+                        <p style="margin: 3px 0;"><b>Modalidad:</b> {datos_emp['Modalidad']}</p>
                     </div>
 
-                    <table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px;">
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px;">
                         <thead>
                             <tr style="background-color: #F4F6F9; border-bottom: 1px solid #D9E2EC; text-align: left;">
-                                <th style="padding: 8px;">Concepto</th>
-                                <th style="padding: 8px; text-align: right;">Detalle / Horas</th>
-                                <th style="padding: 8px; text-align: right;">Monto (₡)</th>
+                                <th style="padding: 6px;">Concepto</th>
+                                <th style="padding: 6px; text-align: right;">Detalle / Horas</th>
+                                <th style="padding: 6px; text-align: right;">Monto (₡)</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td style="padding: 8px;">Salario Base Periodo</td>
-                                <td style="padding: 8px; text-align: right;">-</td>
-                                <td style="padding: 8px; text-align: right;">₡ {datos_emp[col_sal_periodo]:,.2f}</td>
+                                <td style="padding: 6px;">Salario Base Periodo</td>
+                                <td style="padding: 6px; text-align: right;">-</td>
+                                <td style="padding: 6px; text-align: right;">₡ {datos_emp[col_sal_periodo]:,.2f}</td>
                             </tr>
                             <tr>
-                                <td style="padding: 8px;">Horas Trabajadas / Libres (+):</td>
-                                <td style="padding: 8px; text-align: right;">{datos_emp['Horas Trabajadas']} hrs</td>
-                                <td style="padding: 8px; text-align: right;">₡ {datos_emp['Total Pago por Horas (+)']:,.2f}</td>
+                                <td style="padding: 6px;">Horas Trabajadas / Libres (+):</td>
+                                <td style="padding: 6px; text-align: right;">{datos_emp['Horas Trabajadas']} hrs</td>
+                                <td style="padding: 6px; text-align: right;">₡ {datos_emp['Total Pago por Horas (+)']:,.2f}</td>
                             </tr>
                             <tr style="background-color: #F9FAFC;">
-                                <td style="padding: 8px;"><b>SALARIO BRUTO TOTAL</b></td>
+                                <td style="padding: 6px;"><b>SALARIO BRUTO TOTAL</b></td>
+                                <td style="padding: 6px; text-align: right;">-</td>
+                                <td style="padding: 6px; text-align: right;"><b>₡ {datos_emp['Salario Bruto']:,.2f}</b></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 6px; color: #C53030;">CCSS Obrero (10.67%) (-)</td>
+                                <td style="padding: 6px; text-align: right; color: #C53030;">Deducción Ley</td>
+                                <td style="padding: 6px; text-align: right; color: #C53030;">- ₡ {datos_emp['CCSS Obrero (10.67%) (-)']:,.2f}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 6px; color: #C53030;">Adelantos / Deducciones (-)</td>
+                                <td style="padding: 6px; text-align: right; color: #C53030;">Anticipos</td>
+                                <td style="padding: 6px; text-align: right; color: #C53030;">- ₡ {datos_emp['Adelantos (-)']:,.2f}</td>
+                            </tr>
+                            <tr style="border-top: 2px solid #102A43; background-color: #E0FC3E; font-size: 14px;">
+                                <td style="padding: 8px; color: #102A43;"><b>PAGO NETO LÍQUIDO A TRANSFERIR</b></td>
                                 <td style="padding: 8px; text-align: right;">-</td>
-                                <td style="padding: 8px; text-align: right;"><b>₡ {datos_emp['Salario Bruto']:,.2f}</b></td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 8px; color: #C53030;">CCSS Obrero (10.67%) (-)</td>
-                                <td style="padding: 8px; text-align: right; color: #C53030;">Deducción de Ley</td>
-                                <td style="padding: 8px; text-align: right; color: #C53030;">- ₡ {datos_emp['CCSS Obrero (10.67%) (-)']:,.2f}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 8px; color: #C53030;">Adelantos / Deducciones (-)</td>
-                                <td style="padding: 8px; text-align: right; color: #C53030;">Anticipos</td>
-                                <td style="padding: 8px; text-align: right; color: #C53030;">- ₡ {datos_emp['Adelantos (-)']:,.2f}</td>
-                            </tr>
-                            <tr style="border-top: 2px solid #102A43; background-color: #E0FC3E; font-size: 16px;">
-                                <td style="padding: 10px; color: #102A43;"><b>PAGO NETO LÍQUIDO A TRANSFERIR</b></td>
-                                <td style="padding: 10px; text-align: right;">-</td>
-                                <td style="padding: 10px; text-align: right; color: #102A43;"><b>₡ {datos_emp['Pago Neto Liquido']:,.2f}</b></td>
+                                <td style="padding: 8px; text-align: right; color: #102A43;"><b>₡ {datos_emp['Pago Neto Liquido']:,.2f}</b></td>
                             </tr>
                         </tbody>
                     </table>
 
-                    <div style="margin-top: 30px; display: flex; justify-content: space-between; text-align: center; font-size: 12px; color: #627D98;">
-                        <div style="border-top: 1px solid #9FB3C8; width: 40%; padding-top: 5px;">Firma Patrono / Gerencia</div>
-                        <div style="border-top: 1px solid #9FB3C8; width: 40%; padding-top: 5px;">Firma Conforme Colaborador</div>
+                    <div style="margin-top: 25px; display: flex; justify-content: space-between; text-align: center; font-size: 11px; color: #627D98;">
+                        <div style="border-top: 1px solid #9FB3C8; width: 40%; padding-top: 4px;">Firma Patrono / Gerencia</div>
+                        <div style="border-top: 1px solid #9FB3C8; width: 40%; padding-top: 4px;">Firma Conforme Colaborador</div>
                     </div>
                 </div>
                 """
 
-                st.markdown(html_recibo, unsafe_allow_html=True)
+                components.html(html_recibo, height=440, scrolling=True)
 
         else:
             st.info("No hay colaboradores para procesar en este momento.")
