@@ -51,7 +51,7 @@ def run():
                     conn = sqlite3.connect("db_cierres.db")
                     cursor = conn.cursor()
                     
-                    # Tabla estructurada para almacenar cada tienda de forma independiente
+                    # Tabla estructurada para almacenar histórico por tienda y fecha
                     cursor.execute("""
                         CREATE TABLE IF NOT EXISTS cierres (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,18 +63,17 @@ def run():
                         )
                     """)
                     
-                    # Limpiar registros previos de la misma tienda antes de insertar para evitar duplicados
-                    nombres_tiendas = df[col_tienda].unique() if col_tienda in df.columns else ["Bravca"]
-                    for t in nombres_tiendas:
-                        cursor.execute("DELETE FROM cierres WHERE negocio = ?", (str(t),))
-                    
-                    # Insertar cada fila del Excel asegurando integridad de datos
+                    # Inserción inteligente: Si ya existe el registro de esa fecha para esa tienda, 
+                    # lo actualiza; si es un mes o día nuevo, lo acumula sin tocar el pasado.
                     for idx, row in df.iterrows():
                         negocio = str(row[col_tienda]) if col_tienda in df.columns and pd.notnull(row[col_tienda]) else "Bravca"
                         fecha = str(row[col_fecha]) if col_fecha in df.columns and pd.notnull(row[col_fecha]) else f"Cierre {idx+1}"
                         ef = float(row[col_ef_c])
                         tj = float(row[col_tj_c])
                         vend = float(row[col_vend_c])
+                        
+                        # Borrar únicamente el registro exacto de esa fecha y tienda para evitar duplicados al re-subir
+                        cursor.execute("DELETE FROM cierres WHERE negocio = ? AND fecha = ?", (negocio, fecha))
                         
                         cursor.execute("""
                             INSERT INTO cierres (negocio, fecha, efectivo, tarjeta, vendido)
@@ -83,7 +82,7 @@ def run():
                     
                     conn.commit()
                     conn.close()
-                    st.success("¡Datos guardados y actualizados correctamente sin duplicar información!")
+                    st.success("¡Historial actualizado correctamente! Los meses anteriores se conservan intactos y los nuevos datos se integraron sin duplicados.")
                     
             except Exception as e:
                 st.error(f"Error crítico al procesar el archivo: {e}")
@@ -91,7 +90,7 @@ def run():
     with tab1:
         st.subheader("📊 Historial de Cierres Registrados")
         
-        # Botón para limpiar datos anteriores si arrastran errores de pruebas pasadas
+        # Botón de emergencia para reiniciar la base de datos si se requiere desde cero
         if st.button("🗑️ Reiniciar / Borrar Base de Datos Actual"):
             try:
                 conn = sqlite3.connect("db_cierres.db")
