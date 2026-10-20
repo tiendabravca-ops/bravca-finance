@@ -16,8 +16,9 @@ def run():
             try:
                 # Leer el archivo Excel usando pandas y openpyxl
                 df = pd.read_excel(archivo_subido)
-                st.write("Vista previa de los datos detectados:")
-                st.dataframe(df.head())
+                st.write("Vista previa de todos los datos detectados (los 20 cierres):")
+                # Mostramos todo el dataframe sin .head() para ver los 20 registros
+                st.dataframe(df, use_container_width=True)
                 
                 if st.button("Confirmar y Guardar en Base de Datos"):
                     conn = sqlite3.connect("db_cierres.db")
@@ -34,12 +35,13 @@ def run():
                         )
                     """)
                     
-                    # Insertar cada fila del Excel
+                    # Insertar cada fila del Excel adaptado a las columnas reales de Simplifica2
                     for index, row in df.iterrows():
                         negocio = str(row.get("Negocio", "Bravca"))
-                        fecha = str(row.get("Fecha", ""))
-                        efectivo = float(row.get("Efectivo", 0))
-                        tarjeta = float(row.get("Tarjeta", 0))
+                        fecha = str(row.get("Fecha", row.get("Fecha / Turno", f"Cierre {index+1}")))
+                        # Mapeo exacto con los nombres reales de las columnas del reporte
+                        efectivo = float(row.get("Efectivo $", row.get("Efectivo", 0)))
+                        tarjeta = float(row.get("Tarjeta $", row.get("Tarjeta", 0)))
                         
                         cursor.execute("""
                             INSERT INTO cierres (negocio, fecha, efectivo, tarjeta)
@@ -48,7 +50,7 @@ def run():
                     
                     conn.commit()
                     conn.close()
-                    st.success("¡Cierres guardados exitosamente en `db_cierres.db`!")
+                    st.success("¡Los 20 cierres guardados exitosamente en `db_cierres.db`!")
                     
             except Exception as e:
                 st.error(f"Ocurrió un error al procesar el archivo: {e}")
@@ -58,27 +60,26 @@ def run():
         
         try:
             conn = sqlite3.connect("db_cierres.db")
-            # Consultar los datos guardados
             df_guardados = pd.read_sql_query("SELECT * FROM cierres", conn)
             conn.close()
             
             if not df_guardados.empty:
-                # Calcular totales para las tarjetas de resumen
+                # Calcular totales para las tarjetas de resumen superior
                 total_efectivo = df_guardados["efectivo"].sum()
                 total_tarjeta = df_guardados["tarjeta"].sum()
                 total_general = total_efectivo + total_tarjeta
                 
-                # Mostrar tarjetas con los totales (Métricas de Streamlit)
+                # Mostrar tarjetas con los totales
                 col1, col2, col3 = st.columns(3)
                 col1.metric("💵 Total Efectivo", f"₡{total_efectivo:,.2f}")
                 col2.metric("💳 Total Tarjeta", f"₡{total_tarjeta:,.2f}")
                 col3.metric("💰 Total General", f"₡{total_general:,.2f}")
                 
                 st.markdown("---")
-                st.write("Historial detallado de cierres en la base de datos:")
+                st.write("Historial detallado de todos los cierres en la base de datos:")
                 st.dataframe(df_guardados, use_container_width=True)
             else:
-                st.info("No hay registros de cierres guardados todavía en `db_cierres.db`. Sube un reporte para empezar.")
+                st.info("No hay registros guardados todavía. Sube el reporte de Simplifica2 para empezar.")
                 
         except Exception as e:
-            st.info("Aún no se ha creado la base de datos o la tabla de cierres. Sube un archivo primero para inicializarla.")
+            st.info("Aún no se ha inicializado la base de datos. Sube un archivo primero.")
