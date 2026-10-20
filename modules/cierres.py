@@ -47,7 +47,7 @@ def run():
                     conn.commit()
                     conn.close()
                     st.success("¡Cierres guardados exitosamente en `db_cierres.db`!")
-                    
+                    openpyxl
             except Exception as e:
                 st.error(f"Ocurrió un error al procesar el archivo: {e}")
     else:
