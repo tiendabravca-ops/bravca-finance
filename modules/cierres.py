@@ -13,13 +13,42 @@ def run():
         
         if archivo_subido is not None:
             try:
-                # Leer el Excel completo
                 df = pd.read_excel(archivo_subido)
+                df.columns = df.columns.str.strip()
                 
-                st.success(f"✅ Archivo leído. Se detectaron {len(df)} filas.")
+                st.success(f"✅ Archivo leído con éxito. Se detectaron {len(df)} registros.")
                 
-                # Mostrar las columnas exactas que detectó para validarlas en pantalla
-                st.write("Columnas detectadas en tu Excel:", list(df.columns))
+                # Identificar columnas de Colones y Dólares
+                col_ef_colones = "Efectivo ₡" if "Efectivo ₡" in df.columns else "Efectivo"
+                col_tj_colones = "Tarjeta ₡" if "Tarjeta ₡" in df.columns else "Tarjeta"
+                
+                col_ef_dolares = "Efectivo $" if "Efectivo $" in df.columns else None
+                col_tj_dolares = "Tarjeta $" if "Tarjeta $" in df.columns else None
+                
+                # Sumas en Colones
+                tot_ef_c = pd.to_numeric(df[col_ef_colones], errors='coerce').sum() if col_ef_colones in df.columns else 0
+                tot_tj_c = pd.to_numeric(df[col_tj_colones], errors='coerce').sum() if col_tj_colones in df.columns else 0
+                
+                # Sumas en Dólares
+                tot_ef_d = pd.to_numeric(df[col_ef_dolares], errors='coerce').sum() if col_ef_dolares and col_ef_dolares in df.columns else 0
+                tot_tj_d = pd.to_numeric(df[col_tj_dolares], errors='coerce').sum() if col_tj_dolares and col_tj_dolares in df.columns else 0
+                
+                st.markdown("### 📋 Resumen Calculado del Archivo Actual")
+                
+                # Mostrar métricas separadas por moneda y método de pago
+                st.write("**Moneda: Colones (₡)**")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Efectivo (₡)", f"₡{tot_ef_c:,.2f}")
+                c2.metric("Tarjeta (₡)", f"₡{tot_tj_c:,.2f}")
+                c3.metric("Total Colones", f"₡{(tot_ef_c + tot_tj_c):,.2f}")
+                
+                st.write("**Moneda: Dólares ($)**")
+                d1, d2, d3 = st.columns(3)
+                d1.metric("Efectivo ($)", f"${tot_ef_d:,.2f}")
+                d2.metric("Tarjeta ($)", f"${tot_tj_d:,.2f}")
+                d3.metric("Total Dólares", f"${(tot_ef_d + tot_tj_d):,.2f}")
+                
+                st.markdown("---")
                 st.dataframe(df, use_container_width=True)
                 
                 if st.button("💾 Confirmar y Guardar en Base de Datos", type="primary"):
@@ -36,19 +65,13 @@ def run():
                         )
                     """)
                     
-                    # Limpiamos nombres de columnas por si tienen espacios extras
-                    df.columns = df.columns.str.strip()
-                    
-                    # Buscamos columnas de efectivo y tarjeta de forma flexible
-                    col_ef = next((c for c in df.columns if "efectivo" in c.lower()), None)
-                    col_tj = next((c for c in df.columns if "tarjeta" in c.lower()), None)
-                    col_fe = next((c for c in df.columns if "fecha" in c.lower()), None)
-                    
                     for idx, row in df.iterrows():
-                        negocio = "Bravca"
-                        fecha = str(row[col_fe]) if col_fe and pd.notnull(row[col_fe]) else f"Cierre {idx+1}"
-                        ef = float(row[col_ef]) if col_ef and pd.notnull(row[col_ef]) else 0.0
-                        tj = float(row[col_tj]) if col_tj and pd.notnull(row[col_tj]) else 0.0
+                        negocio = str(row.get("Tienda", "Bravca"))
+                        fecha = str(row["Fecha"]) if "Fecha" in df.columns and pd.notnull(row["Fecha"]) else f"Cierre {idx+1}"
+                        
+                        # Guardamos por defecto los valores en colones (o el total general unificado que prefieras)
+                        ef = float(row[col_ef_colones]) if col_ef_colones in df.columns and pd.notnull(row[col_ef_colones]) else 0.0
+                        tj = float(row[col_tj_colones]) if col_tj_colones in df.columns and pd.notnull(row[col_tj_colones]) else 0.0
                         
                         cursor.execute("""
                             INSERT INTO cierres (negocio, fecha, efectivo, tarjeta)
@@ -57,14 +80,13 @@ def run():
                     
                     conn.commit()
                     conn.close()
-                    st.success("¡Datos guardados correctamente en la base de datos!")
-                    st.balloons()
+                    st.success("¡Datos guardados correctamente en la base de datos sin animaciones!")
                     
             except Exception as e:
                 st.error(f"Error al procesar el archivo: {e}")
 
     with tab1:
-        st.subheader("📊 Historial de Cierres Registrados")
+        st.subheader("📊 Historial General en Base de Datos")
         try:
             conn = sqlite3.connect("db_cierres.db")
             df_db = pd.read_sql_query("SELECT * FROM cierres", conn)
@@ -75,13 +97,13 @@ def run():
                 tot_tj = df_db["tarjeta"].sum()
                 
                 col1, col2, col3 = st.columns(3)
-                col1.metric("💵 Total Efectivo", f"₡{tot_ef:,.2f}")
-                col2.metric("💳 Total Tarjeta", f"₡{tot_tj:,.2f}")
-                col3.metric("💰 Total General", f"₡{tot_ef + tot_tj:,.2f}")
+                col1.metric("💵 Total Efectivo (BD)", f"₡{tot_ef:,.2f}")
+                col2.metric("💳 Total Tarjeta (BD)", f"₡{tot_tj:,.2f}")
+                col3.metric("💰 Total General (BD)", f"₡{tot_ef + tot_tj:,.2f}")
                 
                 st.markdown("---")
                 st.dataframe(df_db, use_container_width=True)
             else:
                 st.info("No hay cierres guardados aún.")
         except Exception:
-            st.info("La base de datos está vacía o pendiente de inicializar.")
+            st.info("La base de datos está vacía.")
