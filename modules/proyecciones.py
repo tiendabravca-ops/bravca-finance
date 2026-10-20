@@ -4,10 +4,17 @@ import streamlit as st
 from datetime import datetime
 
 def obtener_ventas_reales_desde_db(se_base_2026, me_base_2026):
-    """Suma directamente los colones de la BD agrupados por mes extrayendo la fecha como texto de forma segura."""
+    """Suma directamente el total vendido de la BD agrupado por mes de forma segura, conservando el historial mes a mes."""
     conn = sqlite3.connect("db_cierres.db")
-    query = "SELECT fecha, negocio, colones FROM cierres"
-    df_db = pd.read_sql_query(query, conn)
+    try:
+        query = "SELECT fecha, negocio, vendido FROM cierres"
+        df_db = pd.read_sql_query(query, conn)
+    except Exception:
+        try:
+            query = "SELECT fecha, negocio, efectivo + tarjeta AS vendido FROM cierres"
+            df_db = pd.read_sql_query(query, conn)
+        except Exception:
+            df_db = pd.DataFrame()
     conn.close()
 
     se_dict = se_base_2026.copy()
@@ -19,13 +26,11 @@ def obtener_ventas_reales_desde_db(se_base_2026, me_base_2026):
         '09': 'septiembre', '10': 'octubre', '11': 'noviembre', '12': 'diciembre'
     }
 
-    if not df_db.empty:
-        # Extraer YYYY y MM directamente de los primeros caracteres del texto de la fecha
+    if not df_db.empty and 'vendido' in df_db.columns:
         df_db['fecha_clean'] = df_db['fecha'].astype(str).str.strip()
         df_db['anio'] = df_db['fecha_clean'].str.slice(0, 4)
         df_db['mes_num'] = df_db['fecha_clean'].str.slice(5, 7)
         
-        # Filtrar únicamente los registros del año 2026
         df_2026 = df_db[df_db['anio'] == '2026']
 
         meses_con_datos = df_2026['mes_num'].dropna().unique()
@@ -34,9 +39,8 @@ def obtener_ventas_reales_desde_db(se_base_2026, me_base_2026):
                 nombre_mes = mapping_meses[m_num]
                 df_mes = df_2026[df_2026['mes_num'] == m_num]
                 
-                # Clasificación flexible por nombre de tienda
-                suma_se = df_mes[~df_mes['negocio'].str.lower().str.contains('extremo|monteverde', na=False)]['colones'].sum()
-                suma_me = df_mes[df_mes['negocio'].str.lower().str.contains('extremo|monteverde', na=False)]['colones'].sum()
+                suma_se = df_mes[~df_mes['negocio'].str.lower().str.contains('extremo|monteverde', na=False)]['vendido'].sum()
+                suma_me = df_mes[df_mes['negocio'].str.lower().str.contains('extremo|monteverde', na=False)]['vendido'].sum()
 
                 if suma_se > 0:
                     se_dict[nombre_mes] = float(suma_se)
@@ -104,7 +108,7 @@ def run():
     
     b1, b2, b3, b4 = st.columns(4)
     with b1:
-        if st.button("⚡ Enero a la fecha (Octubre)", use_container_width=True):
+        if st.button("⚡ Enero a la fecha", use_container_width=True):
             st.session_state['mes_inicio'] = 'enero'
             st.session_state['mes_fin'] = 'diciembre'
     with b2:
@@ -140,11 +144,11 @@ def run():
     se_2025 = {'enero': 5609058.0, 'febrero': 5858674.0, 'marzo': 6563325.0, 'abril': 5030208.0, 'mayo': 3051706.0, 'junio': 4533249.0, 'julio': 6181795.0, 'agosto': 5707678.0, 'septiembre': 2240840.0, 'octubre': 2068705.0, 'noviembre': 4995976.0, 'diciembre': 6451352.0}
     me_2025 = {'enero': 3996723.0, 'febrero': 3849065.0, 'marzo': 3948468.0, 'abril': 3902629.0, 'mayo': 2604663.0, 'junio': 3305065.0, 'julio': 5166749.0, 'agosto': 4805683.0, 'septiembre': 2902578.0, 'octubre': 2914149.0, 'noviembre': 4123608.0, 'diciembre': 5747824.0}
 
-    # Base original de ventas 2026 para conservar enero a septiembre
+    # Base original de ventas 2026
     se_2026_base = {'enero': 6505637.0, 'febrero': 6428153.0, 'marzo': 6568137.0, 'abril': 3404128.0, 'mayo': 2436870.0, 'junio': 2492625.0, 'julio': 3659071.0, 'agosto': 4591962.0, 'septiembre': 2076047.0, 'octubre': 0.0, 'noviembre': 0.0, 'diciembre': 0.0}
     me_2026_base = {'enero': 5217268.0, 'febrero': 3745984.0, 'marzo': 4792605.0, 'abril': 3885728.0, 'mayo': 3427314.0, 'junio': 2571164.0, 'julio': 4780260.0, 'agosto': 4339610.0, 'septiembre': 1287905.0, 'octubre': 0.0, 'noviembre': 0.0, 'diciembre': 0.0}
 
-    # Mezclamos el histórico con los totales reales desde la BD
+    # Mezclamos el histórico con los totales reales obtenidos de la base de datos de cierres
     se_2026, me_2026 = obtener_ventas_reales_desde_db(se_2026_base, me_2026_base)
 
     idx_start = orden_meses.index(mes_inicio)
