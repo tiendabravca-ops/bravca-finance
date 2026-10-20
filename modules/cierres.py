@@ -15,29 +15,43 @@ def run():
             try:
                 # Leer el archivo Excel
                 df = pd.read_excel(archivo_subido)
-                df.columns = df.columns.str.strip()
+                
+                # Limpiamos los nombres de las columnas eliminando espacios adelante/atrás
+                df.columns = df.columns.astype(str).str.strip()
                 
                 st.success(f"✅ Archivo leído con éxito. Se detectaron {len(df)} registros.")
                 
-                # Identificación robusta: buscamos por nombre o por posición exacta basada en tu reporte
-                col_fecha = next((c for c in df.columns if "fecha" in c.lower()), df.columns[0])
+                # Buscamos de forma exacta y segura las columnas de tu reporte
+                # Si no encuentra alguna, lo notifica en pantalla en lugar de fallar a la fuerza
+                col_fecha = next((c for c in df.columns if "fecha" in c.lower()), None)
                 col_tienda = next((c for c in df.columns if "tienda" in c.lower()), None)
                 
-                # Posiciones exactas de tu Excel: Columna L (índice 11) para Efectivo y M (índice 12) para Tarjeta en colones
-                col_ef_colones = df.columns[11] if len(df.columns) > 11 else None
-                col_tj_colones = df.columns[12] if len(df.columns) > 12 else None
+                # Buscamos explícitamente las columnas de Colones
+                col_ef_c = next((c for c in df.columns if "efectivo" in c.lower() and "₡" in c), None)
+                col_tj_c = next((c for c in df.columns if "tarjeta" in c.lower() and "₡" in c), None)
+                col_vend_c = next((c for c in df.columns if "vendido" in c.lower() and "₡" in c), None)
                 
-                # Convertir a numérico de forma segura los 20 registros
-                tot_ef_c = pd.to_numeric(df[col_ef_colones], errors='coerce').sum() if col_ef_colones in df.columns else 0
-                tot_tj_c = pd.to_numeric(df[col_tj_colones], errors='coerce').sum() if col_tj_colones in df.columns else 0
-                
-                st.markdown("### 📋 Resumen Calculado de Colones")
+                # Si no encuentra con símbolo, buscamos por nombre base limpio
+                if not col_ef_c:
+                    col_ef_c = next((c for c in df.columns if c.lower() == "efectivo"), None)
+                if not col_tj_c:
+                    col_tj_c = next((c for c in df.columns if c.lower() == "tarjeta"), None)
+                if not col_vend_c:
+                    col_vend_c = next((c for c in df.columns if c.lower() == "vendido"), None)
+
+                # Calcular sumas reales convirtiendo a numérico de forma segura
+                tot_ef_c = pd.to_numeric(df[col_ef_c], errors='coerce').sum() if col_ef_c else 0.0
+                tot_tj_c = pd.to_numeric(df[col_tj_c], errors='coerce').sum() if col_tj_c else 0.0
+                tot_vend_c = pd.to_numeric(df[col_vend_c], errors='coerce').sum() if col_vend_c else 0.0
+
+                st.markdown("### 📋 Resumen Calculado del Excel")
                 c1, c2, c3 = st.columns(3)
-                c1.metric("Efectivo (₡)", f"₡{tot_ef_c:,.2f}")
-                c2.metric("Tarjeta (₡)", f"₡{tot_tj_c:,.2f}")
-                c3.metric("Total General", f"₡{(tot_ef_c + tot_tj_c):,.2f}")
+                c1.metric("Efectivo ₡", f"₡{tot_ef_c:,.2f}")
+                c2.metric("Tarjeta ₡", f"₡{tot_tj_c:,.2f}")
+                c3.metric("Total Vendido ₡", f"₡{tot_vend_c:,.2f}")
                 
                 st.markdown("---")
+                st.write("Vista previa de los datos exactos del archivo:")
                 st.dataframe(df, use_container_width=True)
                 
                 if st.button("💾 Confirmar y Guardar en Base de Datos", type="primary"):
@@ -56,9 +70,9 @@ def run():
                     
                     for idx, row in df.iterrows():
                         negocio = str(row[col_tienda]) if col_tienda and pd.notnull(row[col_tienda]) else "Bravca"
-                        fecha = str(row[col_fecha]) if pd.notnull(row[col_fecha]) else f"Cierre {idx+1}"
-                        ef = float(row[col_ef_colones]) if col_ef_colones in df.columns and pd.notnull(row[col_ef_colones]) else 0.0
-                        tj = float(row[col_tj_colones]) if col_tj_colones in df.columns and pd.notnull(row[col_tj_colones]) else 0.0
+                        fecha = str(row[col_fecha]) if col_fecha and pd.notnull(row[col_fecha]) else f"Cierre {idx+1}"
+                        ef = float(row[col_ef_c]) if col_ef_c and pd.notnull(row[col_ef_c]) else 0.0
+                        tj = float(row[col_tj_c]) if col_tj_c and pd.notnull(row[col_tj_c]) else 0.0
                         
                         cursor.execute("""
                             INSERT INTO cierres (negocio, fecha, efectivo, tarjeta)
@@ -67,7 +81,7 @@ def run():
                     
                     conn.commit()
                     conn.close()
-                    st.success("¡Datos guardados correctamente en la base de datos!")
+                    st.success("¡Datos guardados de forma segura en la base de datos!")
                     
             except Exception as e:
                 st.error(f"Error al procesar el archivo: {e}")
