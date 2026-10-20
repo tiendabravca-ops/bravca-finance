@@ -23,22 +23,14 @@ def get_gmail_credentials():
     return user, password
 
 def limpiar_nombre_cajero(cadena_raw):
-    """
-    Limpia cadenas sucias como '(a)Karol Villegas PorrasCerrado2026-10-20 15:12Transacciones1'
-    o etiquetas de correo y extrae únicamente el nombre limpio del colaborador.
-    """
+    """Limpia nombres de cajeros eliminando fechas y textos pegados."""
     if not cadena_raw:
-        return "Cajero No Especificado"
-    
-    # 1. Quitar prefijos del tipo (a), (b), etc.
+        return "Colaborador BráVca"
     limpio = re.sub(r'^\([a-z]\)\s*', '', str(cadena_raw), flags=re.IGNORECASE)
-    
-    # 2. Cortar donde aparezca la palabra 'Cerrado', 'Transacciones' o un patrón de fecha YYYY-MM-DD
     match = re.split(r'Cerrado|Transacciones|\d{4}-\d{2}-\d{2}', limpio, flags=re.IGNORECASE)
     if match and match[0].strip():
         limpio = match[0].strip()
-        
-    return limpio if limpio else "Cajero No Especificado"
+    return limpio if limpio else "Colaborador BráVca"
 
 def init_db():
     conn = sqlite3.connect("db_cierres.db")
@@ -73,13 +65,14 @@ def sincronizar_cierres_gmail():
         mail.login(user, password)
         mail.select("INBOX")
 
-        status, messages = mail.search(None, "ALL")
+        status, messages = mail.search(None, '(UNSEEN)') # Opcional: busca no leídos, o usa 'ALL' si prefieres revisar histórico
         if status != "OK":
-            mail.logout()
-            return False, "No se pudo acceder a la bandeja de entrada."
+            status, messages = mail.search(None, "ALL")
 
         email_ids = messages[0].split()
-        email_ids = email_ids[-80:] # Ampliamos el rango para asegurar lectura de ambos negocios
+        email_ids = email_ids[-40:] # Analizamos los últimos correos más relevantes
+
+        cierres_procesados = 0
 
         for e_id in email_ids:
             res, msg_data = mail.fetch(e_id, "(RFC822)")
@@ -90,105 +83,103 @@ def sincronizar_cierres_gmail():
                 if isinstance(response_part, tuple):
                     msg = email.message_from_bytes(response_part[1])
                     
-                    from_header = msg.get("From", "")
                     subject_header = decode_header(msg["Subject"])[0] if msg["Subject"] else ("", "utf-8")
                     subject = subject_header[0]
                     if isinstance(subject, bytes):
                         subject = subject.decode(subject_header[1] or "utf-8", errors="ignore")
 
-                    if "simplifica2" in from_header.lower() or "cierre" in subject.lower() or "transacciones" in subject.lower():
-                        body = ""
-                        pdf_text = ""
-                        nombres_adjuntos = ""
+                    pdf_text = ""
+                    tiene_pdf = False
 
-                        for part in msg.walk():
-                            content_type = part.get_content_type()
-                            content_disposition = str(part.get("Content-Disposition"))
-
-                            if content_type == "text/plain" and "attachment" not in content_disposition:
+                    for part in msg.walk():
+                        content_disposition = str(part.get("Content-Disposition"))
+                        if HAS_PYPDF and "attachment" in content_disposition:
+                            filename = part.get_filename()
+                            if filename and filename.lower().endswith(".pdf"):
                                 try:
-                                    body = part.get_payload(decode=True).decode("utf-8", errors="ignore")
-                                except:
+                                    pdf_data = part.get_payload(decode=True)
+                                    reader = pypdf.PdfReader(io.BytesIO(pdf_data))
+                                    for page in reader.pages:
+                                        t = page.extract_text()
+                                        if t:
+                                            pdf_text += t + "\n"
+                                    tiene_pdf = True
+                                except Exception:
                                     pass
 
-                            elif HAS_PYPDF and ("application/pdf" in content_type or part.get_filename()):
-                                filename = part.get_filename()
-                                if filename:
-                                    nombres_adjuntos += " " + filename
-                                if filename and filename.lower().endswith(".pdf"):
-                                    try:
-                                        pdf_data = part.get_payload(decode=True)
-                                        reader = pypdf.PdfReader(io.BytesIO(pdf_data))
-                                        for page in reader.pages:
-                                            pdf_text += page.extract_text() + "\n"
-                                    except Exception:
-                                        pass
+                    # Si el correo contiene un PDF adjunto de cierre
+                    if tiene_pdf and pdf_text.strip():
+                        full_content = pdf_text + "\n" + subject
 
-                        full_content = body + "\n" + pdf_text + "\n" + subject + "\n" + nombres_adjuntos
-
-                        # Detección inteligente de Tienda (Souvenir vs Extremo)
+                        # Determinar Tienda de forma estricta
                         content_lower = full_content.lower()
-                        if "extremo" in content_lower:
+                        if "extremo" in content_lower or "monteverde extremo" in content_lower:
                             negocio = "Bravca Extremo"
                         else:
                             negocio = "Bravca Souvenir"
 
-                        # Extracción y limpieza del cajero
-                        cajero_match = re.search(r"Cajero\(a\)\s+([^\n\r]+)", full_content, re.IGNORECASE)
-                        if not cajero_match:
-                            cajero_match = re.search(r"Cajero\s*[:]?\s*([^\n\r]+)", full_content, re.IGNORECASE)
-
-                        cajero_raw = cajero_match.group(1).strip() if cajero_match else subject
-                        cajero = limpiar_nombre_cajero(cajero_raw)
-                        if cajero.lower() in ["cajero", "cajero(a)", ""] or len(cajero) < 3:
-                            cajero = "Colaborador BráVca"
-
-                        fecha_match = re.search(r"(2026-\d{2}-\d{2}\s+\d{2}:\d{2})", full_content)
-                        if not fecha_match:
-                            fecha_match = re.search(r"(2026-\d{2}-\d{2})", full_content)
-
-                        fecha = fecha_match.group(1).strip() if fecha_match else ""
-                        if not fecha:
+                        # Extraer Fecha Operativa exacta del PDF
+                        match_fecha = re.search(r"Día operativo\s*[:\-]?\s*(\d{4}-\d{2}-\d{2})", full_content)
+                        if not match_fecha:
+                            match_fecha = re.search(r"(2026-\d{2}-\d{2})", full_content)
+                        
+                        fecha_str = match_fecha.group(1) if match_fecha else None
+                        if not fecha_str:
                             continue
 
-                        if len(fecha) == 10:
-                            fecha += " 18:00"
+                        fecha_completa = f"{fecha_str} 18:00"
 
-                        if fecha[:10] >= "2026-10-16":
-                            tarjeta_colones = 0.0
-                            efectivo_colones = 0.0
+                        # Extraer Cajero limpio
+                        match_cajero = re.search(r"Cajero\s*[:\-]?\s*([^\n]+)", full_content)
+                        cajero_raw = match_cajero.group(1).strip() if match_cajero else subject
+                        cajero = limpiar_nombre_cajero(cajero_raw)
 
-                            t_match = re.search(r"Tarjeta[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
-                            if t_match:
-                                tarjeta_colones = float(t_match.group(1).replace(",", ""))
+                        # Extracción precisa de montos desde las líneas estructuradas del PDF
+                        def extraer_monto_pdf(patron):
+                            m = re.search(patron, full_content, re.IGNORECASE)
+                            if m:
+                                val_str = m.group(1).replace(",", "").strip()
+                                try:
+                                    return float(val_str)
+                                except ValueError:
+                                    return 0.0
+                            return 0.0
 
-                            e_match = re.search(r"(?:Efectivo\s*cobrado|Conteo\s+de\s+efectivo)[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
-                            if e_match:
-                                efectivo_colones = float(e_match.group(1).replace(",", ""))
+                        total_ventas = extraer_monto_pdf(r"Total de ventas\s*[₡]?\s*([\d,]+\.\d{2})")
+                        if total_ventas == 0.0:
+                            total_ventas = extraer_monto_pdf(r"Total dinero físico\s*[₡]?\s*([\d,]+\.\d{2})")
 
-                            colones = tarjeta_colones + efectivo_colones
-                            if colones == 0.0:
-                                total_match = re.search(r"Total[^\d]*([\d,]+\.\d{2})", full_content, re.IGNORECASE)
-                                if total_match:
-                                    colones = float(total_match.group(1).replace(",", ""))
+                        tarjeta_colones = extraer_monto_pdf(r"Tarjeta\s*[₡]?\s*([\d,]+\.\d{2})")
+                        if tarjeta_colones == 0.0:
+                            tarjeta_colones = extraer_monto_pdf(r"Cierre de tarjetas[^\d]*([\d,]+\.\d{2})")
 
-                            dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.\d{2})", full_content)
-                            dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 0.0
+                        efectivo_colones = extraer_monto_pdf(r"Efectivo cobrado\s*[₡]?\s*([\d,]+\.\d{2})")
+                        if efectivo_colones == 0.0:
+                            efectivo_colones = extraer_monto_pdf(r"Conteo de efectivo[^\d]*([\d,]+\.\d{2})")
 
-                            # Limpiar duplicados exactos por fecha y negocio para reinsertar limpio
-                            cursor.execute("DELETE FROM cierres WHERE fecha LIKE ? AND negocio = ? AND cajero != 'Histórico Simplifica2'", (f"{fecha[:10]}%", negocio))
-                            
-                            cursor.execute("""
-                                INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, "Recibido / Verificado"))
-                            
-                            conn.commit()
+                        # Si los subtotales no vinieron desglosados pero sí el total
+                        if total_ventas > 0.0 and tarjeta_colones == 0.0 and efectivo_colones == 0.0:
+                            efectivo_colones = total_ventas
+
+                        colones_final = tarjeta_colones + efectivo_colones
+                        if colones_final == 0.0:
+                            colones_final = total_ventas
+
+                        # Evitar duplicados: Borrar cualquier registro previo para esa misma fecha y tienda antes de insertar el correcto
+                        cursor.execute("DELETE FROM cierres WHERE fecha LIKE ? AND negocio = ? AND cajero != 'Histórico Simplifica2'", (f"{fecha_str}%", negocio))
+                        
+                        cursor.execute("""
+                            INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
+                            VALUES (?, ?, ?, ?, 0.0, ?, ?, ?)
+                        """, (fecha_completa, cajero, negocio, colones_final, tarjeta_colones, efectivo_colones, "Sincronizado PDF Gmail"))
+                        
+                        conn.commit()
+                        cierres_procesados += 1
 
         mail.logout()
         conn.close()
-        return True, "Sincronización completa. Nombres y tiendas actualizados correctamente."
+        return True, f"Sincronización automática exitosa. Se procesaron {cierres_procesados} cierres por PDF desde Gmail."
 
     except Exception as e:
         conn.close()
-        return False, f"Error de conexión: {str(e)}"
+        return False, f"Error de conexión IMAP: {str(e)}"
