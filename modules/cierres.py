@@ -18,39 +18,33 @@ def run():
                 
                 st.success(f"✅ Archivo leído con éxito. Se detectaron {len(df)} registros.")
                 
-                # Identificar columnas clave de forma segura
-                col_fecha = next((c for c in df.columns if "fecha" in c.lower()), None)
-                col_tienda = next((c for c in df.columns if "tienda" in c.lower()), None)
+                # Mapeo exacto por posición y nombre seguro basado en tu reporte real
+                col_fecha = df.columns[0] if len(df.columns) > 0 else "Fecha"
+                col_tienda = "Tienda" if "Tienda" in df.columns else (df.columns[2] if len(df.columns) > 2 else None)
                 
-                col_ef_c = next((c for c in df.columns if "efectivo" in c.lower() and "₡" in c), None)
-                col_tj_c = next((c for c in df.columns if "tarjeta" in c.lower() and "₡" in c), None)
-                col_vend_c = next((c for c in df.columns if "vendido" in c.lower() and "₡" in c), None)
+                # Posiciones exactas confirmadas en tu Excel: Columna L (11) = Efectivo ₡, Columna M (12) = Tarjeta ₡
+                col_ef_c = df.columns[11] if len(df.columns) > 11 else "Efectivo ₡"
+                col_tj_c = df.columns[12] if len(df.columns) > 12 else "Tarjeta ₡"
                 
-                if not col_ef_c:
-                    col_ef_c = next((c for c in df.columns if c.lower() == "efectivo"), None)
-                if not col_tj_c:
-                    col_tj_c = next((c for c in df.columns if c.lower() == "tarjeta"), None)
-                if not col_vend_c:
-                    col_vend_c = next((c for c in df.columns if c.lower() == "vendido"), None)
+                # Calcular sumas reales del archivo
+                tot_ef_c = pd.to_numeric(df[col_ef_c], errors='coerce').sum()
+                tot_tj_c = pd.to_numeric(df[col_tj_c], errors='coerce').sum()
+                tot_vend_c = tot_ef_c + tot_tj_c
 
-                # Calcular sumas del archivo actual
-                tot_ef_c = pd.to_numeric(df[col_ef_c], errors='coerce').sum() if col_ef_c else 0.0
-                tot_tj_c = pd.to_numeric(df[col_tj_c], errors='coerce').sum() if col_tj_c else 0.0
-                tot_vend_c = pd.to_numeric(df[col_vend_c], errors='coerce').sum() if col_vend_c else 0.0
-
-                st.markdown("### 📋 Resumen del Archivo Cargado")
+                st.markdown("### 📋 Resumen Exacto del Excel Subido")
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Efectivo ₡", f"₡{tot_ef_c:,.2f}")
                 c2.metric("Tarjeta ₡", f"₡{tot_tj_c:,.2f}")
-                c3.metric("Total Vendido ₡", f"₡{tot_vend_c:,.2f}")
+                c3.metric("Total General ₡", f"₡{tot_vend_c:,.2f}")
                 
                 st.markdown("---")
                 st.dataframe(df, use_container_width=True)
                 
-                if st.button("💾 Confirmar y Agregar a la Base de Datos", type="primary"):
+                if st.button("💾 Confirmar y Guardar en Base de Datos", type="primary"):
                     conn = sqlite3.connect("db_cierres.db")
                     cursor = conn.cursor()
                     
+                    # Creamos la tabla limpia
                     cursor.execute("""
                         CREATE TABLE IF NOT EXISTS cierres (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,12 +55,13 @@ def run():
                         )
                     """)
                     
-                    # Insertar cada fila conservando la tienda correspondiente sin borrar las demás
+                    # Insertar cada fila extrayendo los valores reales
                     for idx, row in df.iterrows():
-                        negocio = str(row[col_tienda]) if col_tienda and pd.notnull(row[col_tienda]) else "Tienda Principal"
-                        fecha = str(row[col_fecha]) if col_fecha and pd.notnull(row[col_fecha]) else f"Cierre {idx+1}"
-                        ef = float(row[col_ef_c]) if col_ef_c and pd.notnull(row[col_ef_c]) else 0.0
-                        tj = float(row[col_tj_c]) if col_tj_c and pd.notnull(row[col_tj_c]) else 0.0
+                        negocio = str(row[col_tienda]) if col_tienda and pd.notnull(row[col_tienda]) else "Bravca"
+                        fecha = str(row[col_fecha]) if pd.notnull(row[col_fecha]) else f"Cierre {idx+1}"
+                        
+                        ef = float(pd.to_numeric(row[col_ef_c], errors='raise')) if pd.notnull(row[col_ef_c]) else 0.0
+                        tj = float(pd.to_numeric(row[col_tj_c], errors='raise')) if pd.notnull(row[col_tj_c]) else 0.0
                         
                         cursor.execute("""
                             INSERT INTO cierres (negocio, fecha, efectivo, tarjeta)
@@ -75,20 +70,33 @@ def run():
                     
                     conn.commit()
                     conn.close()
-                    st.success("¡Datos guardados y acumulados correctamente sin afectar la otra tienda!")
+                    st.success("¡Datos guardados correctamente en la base de datos con sus montos reales!")
                     
             except Exception as e:
                 st.error(f"Error al procesar el archivo: {e}")
 
     with tab1:
         st.subheader("📊 Historial de Cierres por Tienda")
+        
+        # Botón de emergencia para limpiar datos con ceros anteriores
+        if st.button("🗑️ Reiniciar / Borrar Base de Datos Actual"):
+            try:
+                conn = sqlite3.connect("db_cierres.db")
+                cursor = conn.cursor()
+                cursor.execute("DROP TABLE IF EXISTS cierres")
+                conn.commit()
+                conn.close()
+                st.success("Base de datos reiniciada. Vuelve a subir tus Excel.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error al reiniciar: {e}")
+
         try:
             conn = sqlite3.connect("db_cierres.db")
             df_db = pd.read_sql_query("SELECT * FROM cierres", conn)
             conn.close()
             
             if not df_db.empty:
-                # Selector para filtrar por tienda o ver ambas
                 tiendas_disponibles = ["Todas las tiendas"] + list(df_db["negocio"].unique())
                 tienda_seleccionada = st.selectbox("Filtrar por Tienda:", tiendas_disponibles)
                 
@@ -108,6 +116,6 @@ def run():
                 st.markdown("---")
                 st.dataframe(df_filtrado, use_container_width=True)
             else:
-                st.info("No hay cierres guardados aún en la base de datos.")
+                st.info("No hay cierres guardados aún. Sube un archivo en la otra pestaña.")
         except Exception:
             st.info("La base de datos está vacía.")
