@@ -5,10 +5,11 @@ import sqlite3
 def run():
     st.header("📥 Gestión y Sincronización de Cierres de Caja")
     
-    # Pestañas o opciones dentro de Cierres
+    # Pestañas / Opciones dentro de Cierres
     opcion = st.radio("Selecciona una opción:", ["Ver Cierres", "Subir Reporte Excel (Simplifica2)"])
     
-    if opcion == "Subir Excel (Simplifica2)":
+    # Mismo texto exacto que en el radio button arriba:
+    if opcion == "Subir Reporte Excel (Simplifica2)":
         st.subheader("Cargar archivo de Simplifica2")
         archivo_subido = st.file_uploader("Sube el archivo Excel de Simplifica2", type=["xlsx", "xls"])
         
