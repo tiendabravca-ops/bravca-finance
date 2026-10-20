@@ -5,16 +5,16 @@ import sqlite3
 def run():
     st.header("📥 Gestión y Sincronización de Cierres de Caja")
     
-    # Pestañas / Opciones dentro de Cierres
+    # Menú de opciones dentro de Cierres
     opcion = st.radio("Selecciona una opción:", ["Ver Cierres", "Subir Reporte Excel (Simplifica2)"])
     
-    # Mismo texto exacto que en el radio button arriba:
     if opcion == "Subir Reporte Excel (Simplifica2)":
         st.subheader("Cargar archivo de Simplifica2")
         archivo_subido = st.file_uploader("Sube el archivo Excel de Simplifica2", type=["xlsx", "xls"])
         
         if archivo_subido is not None:
             try:
+                # Leer el archivo Excel usando pandas y openpyxl
                 df = pd.read_excel(archivo_subido)
                 st.write("Vista previa de los datos detectados:")
                 st.dataframe(df.head())
@@ -23,6 +23,7 @@ def run():
                     conn = sqlite3.connect("db_cierres.db")
                     cursor = conn.cursor()
                     
+                    # Crear la tabla si no existe
                     cursor.execute("""
                         CREATE TABLE IF NOT EXISTS cierres (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,6 +34,7 @@ def run():
                         )
                     """)
                     
+                    # Insertar cada fila del Excel
                     for index, row in df.iterrows():
                         negocio = str(row.get("Negocio", "Bravca"))
                         fecha = str(row.get("Fecha", ""))
@@ -47,7 +49,7 @@ def run():
                     conn.commit()
                     conn.close()
                     st.success("¡Cierres guardados exitosamente en `db_cierres.db`!")
-                    openpyxl
+                    
             except Exception as e:
                 st.error(f"Ocurrió un error al procesar el archivo: {e}")
     else:
