@@ -63,6 +63,11 @@ def run():
                         )
                     """)
                     
+                    # Limpiar registros previos de la misma tienda antes de insertar para evitar duplicados
+                    nombres_tiendas = df[col_tienda].unique() if col_tienda in df.columns else ["Bravca"]
+                    for t in nombres_tiendas:
+                        cursor.execute("DELETE FROM cierres WHERE negocio = ?", (str(t),))
+                    
                     # Insertar cada fila del Excel asegurando integridad de datos
                     for idx, row in df.iterrows():
                         negocio = str(row[col_tienda]) if col_tienda in df.columns and pd.notnull(row[col_tienda]) else "Bravca"
@@ -78,7 +83,7 @@ def run():
                     
                     conn.commit()
                     conn.close()
-                    st.success("¡Datos guardados y acumulados correctamente en la base de datos sin sobrescribir otras tiendas!")
+                    st.success("¡Datos guardados y actualizados correctamente sin duplicar información!")
                     
             except Exception as e:
                 st.error(f"Error crítico al procesar el archivo: {e}")
