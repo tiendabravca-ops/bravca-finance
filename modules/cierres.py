@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 
-def mostrar_modulo_cierres():
+def run():
     st.header("📥 Gestión y Sincronización de Cierres de Caja")
     
     # Pestañas o opciones dentro de Cierres
