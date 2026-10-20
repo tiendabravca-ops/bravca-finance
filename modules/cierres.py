@@ -6,6 +6,25 @@ from pypdf import PdfReader
 import re
 from datetime import datetime
 
+def limpiar_nombre_cajero(cadena_raw):
+    """
+    Limpia cadenas sucias como '(a)NICOLECerrado2026-10-18 19:00Transacciones8'
+    y extrae únicamente el nombre limpio del cajero/colaborador.
+    """
+    if not cadena_raw:
+        return "Cajero No Especificado"
+    
+    # 1. Quitar prefijos del tipo (a), (b), etc.
+    limpio = re.sub(r'^\([a-z]\)\s*', '', str(cadena_raw), flags=re.IGNORECASE)
+    
+    # 2. Cortar donde aparezca la palabra 'Cerrado', 'Transacciones' o un patrón de fecha YYYY-MM-DD
+    match = re.split(r'Cerrado|Transacciones|\d{4}-\d{2}-\d{2}', limpio, flags=re.IGNORECASE)
+    if match and match[0].strip():
+        limpio = match[0].strip()
+        
+    return limpio if limpio else "Cajero No Especificado"
+
+
 def guardar_cierre_manual(datos):
     """Inserta o actualiza un cierre procesado manualmente en la base de datos db_cierres.db"""
     conn = sqlite3.connect("db_cierres.db")
@@ -25,6 +44,12 @@ def guardar_cierre_manual(datos):
         )
     """)
     
+    # Limpiar el nombre del cajero antes de guardar o actualizar
+    cajero_limpio = limpiar_nombre_cajero(datos['cajero'])
+    
+    # Limpieza previa de la tabla en caso de que existan registros viejos con el nombre sucio
+    cursor.execute("UPDATE cierres SET cajero = ? WHERE cajero = ?", (cajero_limpio, datos['cajero']))
+    
     # Verificar si ya existe un registro para esa fecha y negocio
     cursor.execute("SELECT id FROM cierres WHERE fecha = ? AND negocio = ?", (datos['fecha'], datos['negocio']))
     existente = cursor.fetchone()
@@ -34,12 +59,12 @@ def guardar_cierre_manual(datos):
             UPDATE cierres 
             SET cajero = ?, colones = ?, dolares = ?, tarjeta_colones = ?, efectivo_colones = ?, estado = ?
             WHERE id = ?
-        """, (datos['cajero'], datos['colones'], datos['dolares'], datos['tarjeta_colones'], datos['efectivo_colones'], datos['estado'], existente[0]))
+        """, (cajero_limpio, datos['colones'], datos['dolares'], datos['tarjeta_colones'], datos['efectivo_colones'], datos['estado'], existente[0]))
     else:
         cursor.execute("""
             INSERT INTO cierres (fecha, cajero, negocio, colones, dolares, tarjeta_colones, efectivo_colones, estado)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (datos['fecha'], datos['cajero'], datos['negocio'], datos['colones'], datos['dolares'], datos['tarjeta_colones'], datos['efectivo_colones'], datos['estado']))
+        """, (datos['fecha'], cajero_limpio, datos['negocio'], datos['colones'], datos['dolares'], datos['tarjeta_colones'], datos['efectivo_colones'], datos['estado']))
         
     conn.commit()
     conn.close()
@@ -65,9 +90,10 @@ def procesar_pdf_manual(archivo_subido, tienda_seleccionada_manual):
     match_fecha = re.search(r"Día operativo\s*[:\-]?\s*(\d{4}-\d{2}-\d{2})", texto)
     fecha_str = match_fecha.group(1) if match_fecha else datetime.now().strftime("%Y-%m-%d")
 
-    # Extraer Cajero
+    # Extraer Cajero y limpiarlo
     match_cajero = re.search(r"Cajero\s*[:\-]?\s*([^\n]+)", texto)
-    cajero = match_cajero.group(1).strip() if match_cajero else "Desconocido"
+    cajero_raw = match_cajero.group(1).strip() if match_cajero else "Desconocido"
+    cajero = limpiar_nombre_cajero(cajero_raw)
 
     def extraer_monto(patron):
         m = re.search(patron, texto)
@@ -132,6 +158,15 @@ def cargar_datos_cierres():
     """)
     conn.commit()
     
+    # Mantenimiento de limpieza para corregir registros viejos existentes en la DB
+    cursor.execute("SELECT id, cajero FROM cierres")
+    registros = cursor.fetchall()
+    for reg_id, caj_raw in registros:
+        caj_limpio = limpiar_nombre_cajero(caj_raw)
+        if caj_limpio != caj_raw:
+            cursor.execute("UPDATE cierres SET cajero = ? WHERE id = ?", (caj_limpio, reg_id))
+    conn.commit()
+
     df = pd.read_sql_query("SELECT id, fecha, cajero, negocio, tarjeta_colones, efectivo_colones, colones, dolares, estado FROM cierres ORDER BY fecha DESC", conn)
     conn.close()
     return df
@@ -216,7 +251,7 @@ def run():
                 st.metric(label="Total Tarjetas (CRC)", value=f"₡ {total_tarjeta:,.2f}")
             with col2:
                 st.metric(label="Total Efectivo (CRC)", value=f"₡ {total_efectivo:,.2f}")
-            with col3:
+            with c3 if 'c3' in locals() else col3:
                 st.metric(label="Venta Total (CRC)", value=f"₡ {total_general:,.2f}")
                 
             if total_dolares > 0:
