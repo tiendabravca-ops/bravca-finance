@@ -52,5 +52,33 @@ def run():
                     
             except Exception as e:
                 st.error(f"Ocurrió un error al procesar el archivo: {e}")
+                
     else:
-        st.info("Aquí puedes ver la tabla con los registros actuales de tus cierres.")
+        st.subheader("📊 Resumen y Cierres Registrados")
+        
+        try:
+            conn = sqlite3.connect("db_cierres.db")
+            # Consultar los datos guardados
+            df_guardados = pd.read_sql_query("SELECT * FROM cierres", conn)
+            conn.close()
+            
+            if not df_guardados.empty:
+                # Calcular totales para las tarjetas de resumen
+                total_efectivo = df_guardados["efectivo"].sum()
+                total_tarjeta = df_guardados["tarjeta"].sum()
+                total_general = total_efectivo + total_tarjeta
+                
+                # Mostrar tarjetas con los totales (Métricas de Streamlit)
+                col1, col2, col3 = st.columns(3)
+                col1.metric("💵 Total Efectivo", f"₡{total_efectivo:,.2f}")
+                col2.metric("💳 Total Tarjeta", f"₡{total_tarjeta:,.2f}")
+                col3.metric("💰 Total General", f"₡{total_general:,.2f}")
+                
+                st.markdown("---")
+                st.write("Historial detallado de cierres en la base de datos:")
+                st.dataframe(df_guardados, use_container_width=True)
+            else:
+                st.info("No hay registros de cierres guardados todavía en `db_cierres.db`. Sube un reporte para empezar.")
+                
+        except Exception as e:
+            st.info("Aún no se ha creado la base de datos o la tabla de cierres. Sube un archivo primero para inicializarla.")
