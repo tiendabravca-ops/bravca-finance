@@ -22,6 +22,24 @@ def get_gmail_credentials():
         password = os.getenv("GMAIL_PASSWORD", "")
     return user, password
 
+def limpiar_nombre_cajero(cadena_raw):
+    """
+    Limpia cadenas sucias como '(a)NICOLECerrado2026-10-18 19:00Transacciones8'
+    o etiquetas de correo y extrae únicamente el nombre limpio del colaborador.
+    """
+    if not cadena_raw:
+        return "Cajero No Especificado"
+    
+    # 1. Quitar prefijos del tipo (a), (b), etc.
+    limpio = re.sub(r'^\([a-z]\)\s*', '', str(cadena_raw), flags=re.IGNORECASE)
+    
+    # 2. Cortar donde aparezca la palabra 'Cerrado', 'Transacciones' o un patrón de fecha YYYY-MM-DD
+    match = re.split(r'Cerrado|Transacciones|\d{4}-\d{2}-\d{2}', limpio, flags=re.IGNORECASE)
+    if match and match[0].strip():
+        limpio = match[0].strip()
+        
+    return limpio if limpio else "Cajero No Especificado"
+
 def init_db():
     conn = sqlite3.connect("db_cierres.db")
     cursor = conn.cursor()
@@ -149,9 +167,9 @@ def sincronizar_cierres_gmail():
                                     except Exception:
                                         pass
 
-                        full_content = body + "\n" + pdf_text
+                        full_content = body + "\n" + pdf_text + "\n" + subject
 
-                        # Extracción mejorada para capturar el nombre real del cajero (ej. NICOLE)
+                        # Extracción mejorada utilizando la función de limpieza
                         negocio_match = re.search(r"Negocio\s+([^\n\r]+)", full_content)
                         cajero_match = re.search(r"Cajero\(a\)\s+([^\n\r]+)", full_content, re.IGNORECASE)
                         if not cajero_match:
@@ -163,9 +181,11 @@ def sincronizar_cierres_gmail():
 
                         negocio = negocio_match.group(1).strip() if negocio_match else "Bravca Souvenir"
                         
-                        # Extraer cajero real y evitar que quede genérico
-                        cajero_raw = cajero_match.group(1).strip() if cajero_match else ""
-                        cajero = cajero_raw if cajero_raw and cajero_raw.lower() not in ["cajero", "cajero(a)"] else "Leonardo Venegas Mejías"
+                        # Limpiar nombre del cajero extraído del correo o del asunto
+                        cajero_raw = cajero_match.group(1).strip() if cajero_match else subject
+                        cajero = limpiar_nombre_cajero(cajero_raw)
+                        if cajero.lower() in ["cajero", "cajero(a)", ""]:
+                            cajero = "Leonardo Venegas Mejías"
 
                         fecha = fecha_match.group(1).strip() if fecha_match else ""
                         if not fecha:
@@ -195,7 +215,7 @@ def sincronizar_cierres_gmail():
                             dolares_match = re.search(r"(?:USD|Dólares|\$)\s*([\d,]+\.\d{2})", full_content)
                             dolares = float(dolares_match.group(1).replace(",", "")) if dolares_match else 0.0
 
-                            # Limpiamos cualquier registro previo defectuoso del 16 o 17 para volverlo a insertar impecable
+                            # Limpiamos cualquier registro previo defectuoso del 16 en adelante para volverlo a insertar impecable
                             cursor.execute("DELETE FROM cierres WHERE fecha LIKE ? AND negocio = ? AND cajero != 'Histórico Simplifica2'", (f"{fecha[:10]}%", negocio))
                             
                             cursor.execute("""
