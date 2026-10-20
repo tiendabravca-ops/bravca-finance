@@ -13,40 +13,29 @@ def run():
         
         if archivo_subido is not None:
             try:
+                # Leer el archivo Excel
                 df = pd.read_excel(archivo_subido)
                 df.columns = df.columns.str.strip()
                 
                 st.success(f"✅ Archivo leído con éxito. Se detectaron {len(df)} registros.")
                 
-                # Identificar columnas de Colones y Dólares
-                col_ef_colones = "Efectivo ₡" if "Efectivo ₡" in df.columns else "Efectivo"
-                col_tj_colones = "Tarjeta ₡" if "Tarjeta ₡" in df.columns else "Tarjeta"
+                # Identificación robusta: buscamos por nombre o por posición exacta basada en tu reporte
+                col_fecha = next((c for c in df.columns if "fecha" in c.lower()), df.columns[0])
+                col_tienda = next((c for c in df.columns if "tienda" in c.lower()), None)
                 
-                col_ef_dolares = "Efectivo $" if "Efectivo $" in df.columns else None
-                col_tj_dolares = "Tarjeta $" if "Tarjeta $" in df.columns else None
+                # Posiciones exactas de tu Excel: Columna L (índice 11) para Efectivo y M (índice 12) para Tarjeta en colones
+                col_ef_colones = df.columns[11] if len(df.columns) > 11 else None
+                col_tj_colones = df.columns[12] if len(df.columns) > 12 else None
                 
-                # Sumas en Colones
+                # Convertir a numérico de forma segura los 20 registros
                 tot_ef_c = pd.to_numeric(df[col_ef_colones], errors='coerce').sum() if col_ef_colones in df.columns else 0
                 tot_tj_c = pd.to_numeric(df[col_tj_colones], errors='coerce').sum() if col_tj_colones in df.columns else 0
                 
-                # Sumas en Dólares
-                tot_ef_d = pd.to_numeric(df[col_ef_dolares], errors='coerce').sum() if col_ef_dolares and col_ef_dolares in df.columns else 0
-                tot_tj_d = pd.to_numeric(df[col_tj_dolares], errors='coerce').sum() if col_tj_dolares and col_tj_dolares in df.columns else 0
-                
-                st.markdown("### 📋 Resumen Calculado del Archivo Actual")
-                
-                # Mostrar métricas separadas por moneda y método de pago
-                st.write("**Moneda: Colones (₡)**")
+                st.markdown("### 📋 Resumen Calculado de Colones")
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Efectivo (₡)", f"₡{tot_ef_c:,.2f}")
                 c2.metric("Tarjeta (₡)", f"₡{tot_tj_c:,.2f}")
-                c3.metric("Total Colones", f"₡{(tot_ef_c + tot_tj_c):,.2f}")
-                
-                st.write("**Moneda: Dólares ($)**")
-                d1, d2, d3 = st.columns(3)
-                d1.metric("Efectivo ($)", f"${tot_ef_d:,.2f}")
-                d2.metric("Tarjeta ($)", f"${tot_tj_d:,.2f}")
-                d3.metric("Total Dólares", f"${(tot_ef_d + tot_tj_d):,.2f}")
+                c3.metric("Total General", f"₡{(tot_ef_c + tot_tj_c):,.2f}")
                 
                 st.markdown("---")
                 st.dataframe(df, use_container_width=True)
@@ -66,10 +55,8 @@ def run():
                     """)
                     
                     for idx, row in df.iterrows():
-                        negocio = str(row.get("Tienda", "Bravca"))
-                        fecha = str(row["Fecha"]) if "Fecha" in df.columns and pd.notnull(row["Fecha"]) else f"Cierre {idx+1}"
-                        
-                        # Guardamos por defecto los valores en colones (o el total general unificado que prefieras)
+                        negocio = str(row[col_tienda]) if col_tienda and pd.notnull(row[col_tienda]) else "Bravca"
+                        fecha = str(row[col_fecha]) if pd.notnull(row[col_fecha]) else f"Cierre {idx+1}"
                         ef = float(row[col_ef_colones]) if col_ef_colones in df.columns and pd.notnull(row[col_ef_colones]) else 0.0
                         tj = float(row[col_tj_colones]) if col_tj_colones in df.columns and pd.notnull(row[col_tj_colones]) else 0.0
                         
@@ -80,7 +67,7 @@ def run():
                     
                     conn.commit()
                     conn.close()
-                    st.success("¡Datos guardados correctamente en la base de datos sin animaciones!")
+                    st.success("¡Datos guardados correctamente en la base de datos!")
                     
             except Exception as e:
                 st.error(f"Error al procesar el archivo: {e}")
