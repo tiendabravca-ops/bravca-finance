@@ -5,7 +5,7 @@ import sqlite3
 import os
 
 def obtener_ventas_reales_desde_db(se_base_2026, me_base_2026):
-    """Suma directamente los colones de la BD agrupados por mes extrayendo la fecha como texto de forma segura."""
+    """Suma directamente el total vendido de la BD agrupado por mes de forma segura, conservando el historial."""
     db_path = "db_cierres.db"
     se_dict = se_base_2026.copy()
     me_dict = me_base_2026.copy()
@@ -15,8 +15,13 @@ def obtener_ventas_reales_desde_db(se_base_2026, me_base_2026):
 
     try:
         conn = sqlite3.connect(db_path)
-        query = "SELECT fecha, negocio, colones FROM cierres"
-        df_db = pd.read_sql_query(query, conn)
+        try:
+            query = "SELECT fecha, negocio, vendido FROM cierres"
+            df_db = pd.read_sql_query(query, conn)
+        except Exception:
+            # Fallback por si la estructura anterior usa efectivo + tarjeta
+            query = "SELECT fecha, negocio, efectivo + tarjeta AS vendido FROM cierres"
+            df_db = pd.read_sql_query(query, conn)
         conn.close()
 
         mapping_meses = {
@@ -25,7 +30,7 @@ def obtener_ventas_reales_desde_db(se_base_2026, me_base_2026):
             '09': 'septiembre', '10': 'octubre', '11': 'noviembre', '12': 'diciembre'
         }
 
-        if not df_db.empty:
+        if not df_db.empty and 'vendido' in df_db.columns:
             df_db['fecha_clean'] = df_db['fecha'].astype(str).str.strip()
             df_db['anio'] = df_db['fecha_clean'].str.slice(0, 4)
             df_db['mes_num'] = df_db['fecha_clean'].str.slice(5, 7)
@@ -40,8 +45,8 @@ def obtener_ventas_reales_desde_db(se_base_2026, me_base_2026):
                     df_mes = df_2026[df_2026['mes_num'] == m_num]
                     
                     # Clasificación flexible por nombre de tienda
-                    suma_se = df_mes[~df_mes['negocio'].str.lower().str.contains('extremo|monteverde', na=False)]['colones'].sum()
-                    suma_me = df_mes[df_mes['negocio'].str.lower().str.contains('extremo|monteverde', na=False)]['colones'].sum()
+                    suma_se = df_mes[~df_mes['negocio'].str.lower().str.contains('extremo|monteverde', na=False)]['vendido'].sum()
+                    suma_me = df_mes[df_mes['negocio'].str.lower().str.contains('extremo|monteverde', na=False)]['vendido'].sum()
 
                     if suma_se > 0:
                         se_dict[nombre_mes] = float(suma_se)
