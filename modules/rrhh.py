@@ -489,7 +489,7 @@ def run():
     with tab6:
         st.markdown("### 📋 Manuales de Puesto y Políticas de Tienda")
         with st.expander("📤 Cargar Nuevo Manual / Documento (PDF/Word)"):
-            doc_file = st.file_uploader("Selecciona el archivo PDF o Word", type=["pdf", "docx"])
+            doc_file = st.file_uploader("Selecciona los archivos PDF o Word", type=["pdf", "docx"])
             titulo_doc = st.text_input("Título del Puesto / Documento")
             if st.button("Guardar Documento") and doc_file and titulo_doc:
                 ext = doc_file.name.split(".")[-1]
